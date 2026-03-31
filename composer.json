@@ -1,0 +1,39 @@
+{
+    "name": "semitexa/graphql",
+    "description": "Semitexa GraphQL - opt-in GraphQL operation discovery built on Payload DTO, Handler, and typed output contracts",
+    "version": "0.1.0",
+    "type": "semitexa-module",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Semitexa",
+            "email": "support@semitexa.com"
+        }
+    ],
+    "require": {
+        "php": "^8.4",
+        "semitexa/core": "^1.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Semitexa\\Graphql\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Semitexa\\Graphql\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "semitexa-module": {
+            "extends": null
+        }
+    },
+    "keywords": [
+        "semitexa",
+        "graphql",
+        "schema",
+        "payload",
+        "handler"
+    ]
+}
