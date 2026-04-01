@@ -1,7 +1,7 @@
 {
     "name": "semitexa/graphql",
     "description": "Semitexa GraphQL - opt-in GraphQL operation discovery built on Payload DTO, Handler, and typed output contracts",
-    "version": "0.1.0",
+    "version": "v0.1.2",
     "type": "semitexa-module",
     "license": "MIT",
     "authors": [
