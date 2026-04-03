@@ -1,4 +1,4 @@
-# semitexa/graphql
+# Semitexa GraphQL
 
 Opt-in GraphQL operation discovery for Semitexa, built on the same `Payload DTO -> Handler -> typed output contract` architecture as the rest of the framework.
 
