@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Semitexa\Graphql\Attributes;
+namespace Semitexa\Graphql\Attribute;
 
 use Attribute;
 
@@ -35,5 +35,7 @@ final class ExposeAsGraphql
         public readonly ?string $output = null,
         /** Optional human-readable description for generated schema/docs. */
         public readonly string $description = '',
+        /** When true, the schema field's type is wrapped as `[Output]` (a list). */
+        public readonly bool $list = false,
     ) {}
 }

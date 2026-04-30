@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Semitexa\Graphql\Contract;
+namespace Semitexa\Graphql\Domain\Contract;
 
 use Semitexa\Graphql\Discovery\ResolvedGraphqlOperation;
 

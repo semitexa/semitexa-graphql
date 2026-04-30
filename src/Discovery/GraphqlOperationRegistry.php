@@ -8,8 +8,8 @@ use ReflectionClass;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Attribute\SatisfiesServiceContract;
 use Semitexa\Core\Contract\RouteInspectionRegistryInterface;
-use Semitexa\Graphql\Attributes\ExposeAsGraphql;
-use Semitexa\Graphql\Contract\GraphqlOperationRegistryInterface;
+use Semitexa\Graphql\Attribute\ExposeAsGraphql;
+use Semitexa\Graphql\Domain\Contract\GraphqlOperationRegistryInterface;
 use InvalidArgumentException;
 
 /**
@@ -79,6 +79,7 @@ final class GraphqlOperationRegistry implements GraphqlOperationRegistryInterfac
                 handlerClasses: $this->extractHandlerClasses($route->handlers),
                 responseClass: $route->responseClass,
                 description: $attribute->description,
+                list: $attribute->list,
             );
         }
 
