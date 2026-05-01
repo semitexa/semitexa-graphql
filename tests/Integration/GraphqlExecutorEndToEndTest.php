@@ -98,8 +98,9 @@ final class GraphqlExecutorEndToEndTest extends TestCase
         $executor = $this->buildExecutor();
 
         // Empty id passes the schema's NonNull check ("" is a string), but
-        // the Payload's validate() rejects it. Confirms the pipeline runs
-        // ValidatablePayload::validate() before the Handler.
+        // the Payload's setId() throws ValidationException. Confirms the
+        // pipeline propagates setter-time validation failures from the
+        // GraphQL hydrator up to the executor as VALIDATION_FAILED.
         $result = $executor->execute(
             'query Q { runtimeFixture(id: "") { id } }'
         );

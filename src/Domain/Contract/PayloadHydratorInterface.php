@@ -9,8 +9,9 @@ namespace Semitexa\Graphql\Domain\Contract;
  *
  * Implementations receive an array of pre-coerced GraphQL arg values (already
  * shaped by the schema's argument types) and must return a fully populated
- * Payload instance. Validation belongs to the Payload itself (via
- * ValidatablePayload::validate()) and runs downstream of hydration.
+ * Payload instance. Validation belongs to the Payload's setters: any
+ * `setX()` may throw `Semitexa\Core\Exception\ValidationException` and the
+ * exception bubbles up through hydration unchanged.
  */
 interface PayloadHydratorInterface
 {

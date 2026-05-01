@@ -6,8 +6,7 @@ namespace Semitexa\Graphql\Application\Payload\Request;
 
 use Semitexa\Authorization\Attribute\PublicEndpoint;
 use Semitexa\Core\Attribute\AsPayload;
-use Semitexa\Core\Contract\ValidatablePayload;
-use Semitexa\Core\Http\PayloadValidationResult;
+use Semitexa\Core\Validation\Trait\NotBlankValidationTrait;
 use Semitexa\Graphql\Application\Resource\Response\GraphqlEndpointResource;
 
 /**
@@ -24,6 +23,47 @@ use Semitexa\Graphql\Application\Resource\Response\GraphqlEndpointResource;
  * Validation is shape-only — `query` must be a non-empty string. GraphQL
  * parse / validation failures are produced by the executor and surface in
  * the response's `errors` array, not as Semitexa ValidationException.
+ *
+ * **Request format (`consumes`).** Only `application/json` is advertised.
+ * The GraphQL-over-HTTP specification mandates JSON request bodies of the
+ * form `{ query, variables?, operationName? }`, and that is what every
+ * conforming GraphQL client sends. Semitexa's PayloadHydrator can also
+ * decode XML request bodies via SimpleXML, but exposing that on a
+ * `/graphql` endpoint would invite non-spec usage; the alternative GraphQL
+ * Resource-DTO selection-set bridge handles those exotic shapes elsewhere.
+ *
+ * **Response formats (`produces`).** Three formats are advertised — the
+ * full set that the route's renderer pipeline can actually deliver for a
+ * `ResourceResponse` carrying an associative render context (the GraphQL
+ * execution envelope `{ data, errors?, extensions? }`):
+ *
+ *   - `application/json`  — canonical GraphQL response; the default when
+ *     Accept is missing or `*\/*`. Routed through `ResponseRenderer::renderJson`.
+ *   - `application/xml`   — the envelope is structurally array-compatible
+ *     with `ResponseRenderer::renderXml`'s SimpleXML conversion. Useful for
+ *     non-JS consumers (analytics, log scrapers); not GraphQL-spec wire
+ *     format but a legitimate framework rendering.
+ *   - `text/plain`        — `ResponseRenderer::renderText` emits a
+ *     pretty-printed JSON dump under `text/plain`. Handy for `curl`-style
+ *     debugging of the live endpoint.
+ *
+ * Other framework-supported MIME types are deliberately NOT advertised
+ * here:
+ *
+ *   - `application/ld+json`             — the negotiator routes it to
+ *     `renderJson` which sets Content-Type back to `application/json` and
+ *     emits no `@context` / `@type`. Advertising would be a contract lie.
+ *   - `application/graphql-response+json` — only the Resource-DTO
+ *     `GraphqlResourceRenderer` produces this MIME, and that path requires
+ *     a `ResourceObjectInterface` DTO with metadata, not the bare execution
+ *     envelope this endpoint emits.
+ *   - `text/html`                       — the endpoint has no Twig render
+ *     handle; `ResponseRenderer::renderLayout` would have nothing to render.
+ *   - `application/vnd.api+json`        — no renderer in the framework.
+ *
+ * Adding any of the above without the corresponding renderer behaviour
+ * would falsely advertise capability that the response pipeline cannot
+ * actually deliver.
  */
 #[AsPayload(
     path: 'env::SEMITEXA_GRAPHQL_ROUTE_PATH::/graphql',
@@ -31,11 +71,17 @@ use Semitexa\Graphql\Application\Resource\Response\GraphqlEndpointResource;
     name: 'graphql.endpoint',
     responseWith: GraphqlEndpointResource::class,
     consumes: ['application/json'],
-    produces: ['application/json'],
+    produces: [
+        'application/json',
+        'application/xml',
+        'text/plain'
+    ],
 )]
 #[PublicEndpoint]
-final class GraphqlEndpointPayload implements ValidatablePayload
+final class GraphqlEndpointPayload
 {
+    use NotBlankValidationTrait;
+
     private string $query = '';
 
     /** @var array<string, mixed>|null */
@@ -50,7 +96,11 @@ final class GraphqlEndpointPayload implements ValidatablePayload
 
     public function setQuery(string $query): void
     {
-        $this->query = $query;
+        $this->query = self::requireNotBlank(
+            'query',
+            $query,
+            'GraphQL `query` field is required and must be a non-empty string.',
+        );
     }
 
     /** @return array<string, mixed>|null */
@@ -92,14 +142,5 @@ final class GraphqlEndpointPayload implements ValidatablePayload
         }
         $trimmed = trim($operationName);
         $this->operationName = $trimmed === '' ? null : $trimmed;
-    }
-
-    public function validate(): PayloadValidationResult
-    {
-        $errors = [];
-        if ($this->query === '' || trim($this->query) === '') {
-            $errors['query'] = ['GraphQL `query` field is required and must be a non-empty string.'];
-        }
-        return new PayloadValidationResult($errors === [], $errors);
     }
 }

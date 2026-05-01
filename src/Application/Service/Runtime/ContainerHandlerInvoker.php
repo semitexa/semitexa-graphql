@@ -9,8 +9,6 @@ use ReflectionClass;
 use RuntimeException;
 use Semitexa\Core\Attribute\SatisfiesServiceContract;
 use Semitexa\Core\Container\ContainerFactory;
-use Semitexa\Core\Contract\ValidatablePayload;
-use Semitexa\Core\Exception\ValidationException;
 use Semitexa\Graphql\Domain\Contract\HandlerInvokerInterface;
 use Semitexa\Graphql\Discovery\ResolvedGraphqlOperation;
 use Throwable;
@@ -26,10 +24,12 @@ use Throwable;
  *   3. Instantiate the Resource declared by the route's `responseWith`
  *      (`ResolvedGraphqlOperation::responseClass`) — these are zero-arg
  *      constructable in Semitexa's convention.
- *   4. Validate the payload via `ValidatablePayload::validate()` if
- *      implemented; failures throw `ValidationException` and bubble up to
- *      the GraphQL error mapper.
- *   5. Invoke `$handler->handle($payload, $resource)` and return its result.
+ *   4. Invoke `$handler->handle($payload, $resource)` and return its result.
+ *
+ * Validation is enforced at hydration time by Payload setters (any setter
+ * may throw `Semitexa\Core\Exception\ValidationException`). The exception
+ * bubbles up through this invoker to the GraphQL error mapper, where it
+ * surfaces as `extensions.code = VALIDATION_FAILED`.
  *
  * The container is acquired lazily from `ContainerFactory::get()` because
  * the SemitexaContainer is internal framework plumbing that isn't part of
@@ -51,8 +51,6 @@ final class ContainerHandlerInvoker implements HandlerInvokerInterface
             ));
         }
 
-        $this->validatePayload($payload);
-
         $handler = $this->resolveHandler($operation->handlerClasses[0]);
         $resource = $this->instantiateResource($operation->responseClass);
 
@@ -63,18 +61,6 @@ final class ContainerHandlerInvoker implements HandlerInvokerInterface
     public function setContainerForTest(?ContainerInterface $container): void
     {
         $this->containerOverride = $container;
-    }
-
-    private function validatePayload(object $payload): void
-    {
-        if (!$payload instanceof ValidatablePayload) {
-            return;
-        }
-        $result = $payload->validate();
-        if ($result->isValid()) {
-            return;
-        }
-        throw new ValidationException($result->getErrors());
     }
 
     private function resolveHandler(string $class): object

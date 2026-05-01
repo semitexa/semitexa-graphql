@@ -65,10 +65,13 @@ final class GraphqlEndpointHandlerTest extends TestCase
     public function test_payload_validation_rejects_empty_query(): void
     {
         $payload = new GraphqlEndpointPayload();
-        $result = $payload->validate();
 
-        self::assertFalse($result->isValid());
-        self::assertArrayHasKey('query', $result->getErrors());
+        try {
+            $payload->setQuery('');
+            self::fail('expected ValidationException');
+        } catch (\Semitexa\Core\Exception\ValidationException $e) {
+            self::assertArrayHasKey('query', $e->getErrorContext()['errors']);
+        }
     }
 
     public function test_payload_accepts_string_variables_blob(): void

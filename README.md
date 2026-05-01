@@ -46,12 +46,11 @@ Leave the variable unset (or commented) to keep the default `/graphql`. Verify t
 Resolvers in this package are intentionally thin. For each `#[ExposeAsGraphql]` field, the resolver:
 
 1. takes the GraphQL arguments,
-2. hydrates a fresh instance of the Payload DTO via setters (`PayloadHydratorInterface`),
-3. validates it (the same `ValidatablePayload::validate()` your REST routes already run),
-4. resolves the bound Handler from the application container, including its `#[InjectAsReadonly]` dependencies (`HandlerInvokerInterface`),
-5. instantiates the Resource declared by the route,
-6. invokes `Handler::handle($payload, $resource)`,
-7. serializes the returned Resource for GraphQL (`ResourceSerializerInterface`).
+2. hydrates a fresh instance of the Payload DTO via setters (`PayloadHydratorInterface`); each setter validates its argument and may throw `Semitexa\Core\Exception\ValidationException`, which surfaces as a `VALIDATION_FAILED` GraphQL error,
+3. resolves the bound Handler from the application container, including its `#[InjectAsReadonly]` dependencies (`HandlerInvokerInterface`),
+4. instantiates the Resource declared by the route,
+5. invokes `Handler::handle($payload, $resource)`,
+6. serializes the returned Resource for GraphQL (`ResourceSerializerInterface`).
 
 Business logic stays in Handlers. The GraphQL layer is a transport.
 
@@ -73,7 +72,7 @@ Add `#[ExposeAsGraphql]` to any Payload DTO that already has `#[AsPayload]`:
     description: 'List demo articles.',
     list: true,
 )]
-final class ArticleListQueryPayload implements ValidatablePayload { /* … */ }
+final class ArticleListQueryPayload { /* … */ }
 ```
 
 That's all that's required. Discovery picks it up at boot, the schema builder produces a `[Article]` field on the root `Query` type, and the existing `ArticleListQueryHandler` (declared via `#[AsPayloadHandler(payload: …, resource: …)]`) runs at field resolution.
