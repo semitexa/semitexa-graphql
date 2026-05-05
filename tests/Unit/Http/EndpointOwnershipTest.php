@@ -6,8 +6,8 @@ namespace Semitexa\Graphql\Tests\Unit\Http;
 
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
-use Semitexa\Core\Attribute\AsPayload;
 use Semitexa\Core\Attribute\AsPayloadHandler;
+use Semitexa\Core\Attribute\AsPublicPayload;
 use Semitexa\Core\Config\EnvValueResolver;
 use Semitexa\Graphql\Application\Handler\PayloadHandler\GraphqlEndpointHandler;
 use Semitexa\Graphql\Application\Payload\Request\GraphqlEndpointPayload;
@@ -36,10 +36,10 @@ final class EndpointOwnershipTest extends TestCase
             'POST /graphql owner must live under the package namespace, not in a host module.',
         );
 
-        $attributes = $reflection->getAttributes(AsPayload::class);
-        self::assertCount(1, $attributes, 'GraphqlEndpointPayload must declare exactly one #[AsPayload].');
+        $attributes = $reflection->getAttributes(AsPublicPayload::class);
+        self::assertCount(1, $attributes, 'GraphqlEndpointPayload must declare exactly one #[AsPublicPayload].');
 
-        /** @var AsPayload $route */
+        /** @var AsPublicPayload $route */
         $route = $attributes[0]->newInstance();
 
         // The path is declared with Semitexa's env::VAR::default attribute
@@ -55,8 +55,8 @@ final class EndpointOwnershipTest extends TestCase
     public function test_route_path_defaults_to_graphql_when_env_var_unset(): void
     {
         $reflection = new ReflectionClass(GraphqlEndpointPayload::class);
-        /** @var AsPayload $route */
-        $route = $reflection->getAttributes(AsPayload::class)[0]->newInstance();
+        /** @var AsPublicPayload $route */
+        $route = $reflection->getAttributes(AsPublicPayload::class)[0]->newInstance();
 
         $previous = getenv('SEMITEXA_GRAPHQL_ROUTE_PATH');
         putenv('SEMITEXA_GRAPHQL_ROUTE_PATH');
@@ -89,8 +89,8 @@ final class EndpointOwnershipTest extends TestCase
     public function test_route_path_can_be_overridden_via_env(string $override): void
     {
         $reflection = new ReflectionClass(GraphqlEndpointPayload::class);
-        /** @var AsPayload $route */
-        $route = $reflection->getAttributes(AsPayload::class)[0]->newInstance();
+        /** @var AsPublicPayload $route */
+        $route = $reflection->getAttributes(AsPublicPayload::class)[0]->newInstance();
 
         $previous = getenv('SEMITEXA_GRAPHQL_ROUTE_PATH');
         putenv("SEMITEXA_GRAPHQL_ROUTE_PATH={$override}");

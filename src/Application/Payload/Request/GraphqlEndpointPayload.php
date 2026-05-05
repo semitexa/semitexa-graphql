@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Graphql\Application\Payload\Request;
 
-use Semitexa\Authorization\Attribute\PublicEndpoint;
-use Semitexa\Core\Attribute\AsPayload;
+use Semitexa\Core\Attribute\AsPublicPayload;
 use Semitexa\Core\Validation\Trait\NotBlankValidationTrait;
 use Semitexa\Graphql\Application\Resource\Response\GraphqlEndpointResource;
 
@@ -65,7 +64,7 @@ use Semitexa\Graphql\Application\Resource\Response\GraphqlEndpointResource;
  * would falsely advertise capability that the response pipeline cannot
  * actually deliver.
  */
-#[AsPayload(
+#[AsPublicPayload(
     path: 'env::SEMITEXA_GRAPHQL_ROUTE_PATH::/graphql',
     methods: ['POST'],
     name: 'graphql.endpoint',
@@ -77,7 +76,6 @@ use Semitexa\Graphql\Application\Resource\Response\GraphqlEndpointResource;
         'text/plain'
     ],
 )]
-#[PublicEndpoint]
 final class GraphqlEndpointPayload
 {
     use NotBlankValidationTrait;

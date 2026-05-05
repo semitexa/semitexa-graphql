@@ -18,7 +18,7 @@ use Attribute;
  *
  * Usage:
  * ```php
- * #[AsPayload(path: '/api/v1/products/{slug}', methods: ['GET'])]
+ * #[AsProtectedPayload(path: '/api/v1/products/{slug}', methods: ['GET'])]
  * #[ExposeAsGraphql(field: 'productBySlug', rootType: 'query', output: ProductView::class)]
  * final class ProductDetailPayload { ... }
  * ```
