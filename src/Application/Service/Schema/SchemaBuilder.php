@@ -126,6 +126,12 @@ final class SchemaBuilder implements SchemaProviderInterface
     {
         $fields = [];
         foreach ($operations as $op) {
+            if (isset($fields[$op->field])) {
+                throw new \InvalidArgumentException(
+                    "Duplicate GraphQL field '{$op->field}' detected. "
+                    . "Declared by both {$op->payloadClass} and the existing field definition."
+                );
+            }
             $fields[$op->field] = $this->buildFieldDefinition($op);
         }
         return $fields;

@@ -121,10 +121,18 @@ final class GraphqlEndpointPayload
         // Some clients send `variables` as a JSON-encoded string; accept that.
         if (is_string($variables)) {
             $decoded = json_decode($variables, true);
-            $this->variables = is_array($decoded) ? $decoded : null;
-            return;
+            if (is_array($decoded)) {
+                $this->variables = $decoded;
+                return;
+            }
+            throw new \InvalidArgumentException(
+                "GraphQL \`variables\` field must be an object (or a JSON string encoding an object). Received invalid string: " . $variables
+            );
         }
-        $this->variables = null;
+
+        throw new \InvalidArgumentException(
+            "GraphQL \`variables\` field must be an object/map. Received type: " . get_debug_type($variables)
+        );
     }
 
     public function getOperationName(): ?string
