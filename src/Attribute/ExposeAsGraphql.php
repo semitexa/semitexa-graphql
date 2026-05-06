@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Semitexa\Graphql\Attributes;
+namespace Semitexa\Graphql\Attribute;
 
 use Attribute;
 
@@ -18,7 +18,7 @@ use Attribute;
  *
  * Usage:
  * ```php
- * #[AsPayload(path: '/api/v1/products/{slug}', methods: ['GET'])]
+ * #[AsProtectedPayload(path: '/api/v1/products/{slug}', methods: ['GET'])]
  * #[ExposeAsGraphql(field: 'productBySlug', rootType: 'query', output: ProductView::class)]
  * final class ProductDetailPayload { ... }
  * ```
@@ -35,5 +35,7 @@ final class ExposeAsGraphql
         public readonly ?string $output = null,
         /** Optional human-readable description for generated schema/docs. */
         public readonly string $description = '',
+        /** When true, the schema field's type is wrapped as `[Output]` (a list). */
+        public readonly bool $list = false,
     ) {}
 }

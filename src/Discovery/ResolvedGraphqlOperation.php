@@ -28,6 +28,7 @@ final readonly class ResolvedGraphqlOperation
         public array $handlerClasses,
         public string $responseClass,
         public string $description,
+        public bool $list = false,
     ) {}
 
     public function isQuery(): bool
