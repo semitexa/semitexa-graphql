@@ -1,39 +1,40 @@
 {
-  "name": "semitexa/graphql",
-  "description": "Semitexa GraphQL - opt-in GraphQL operation discovery built on Payload DTO, Handler, and typed output contracts",
-  "type": "semitexa-module",
-  "license": "MIT",
-  "authors": [
-    {
-      "name": "Semitexa",
-      "email": "support@semitexa.com"
-    }
-  ],
-  "require": {
-    "php": "^8.4",
-    "semitexa/core": "*",
-    "webonyx/graphql-php": "^15.16"
-  },
-  "autoload": {
-    "psr-4": {
-      "Semitexa\\Graphql\\": "src/"
-    }
-  },
-  "autoload-dev": {
-    "psr-4": {
-      "Semitexa\\Graphql\\Tests\\": "tests/"
-    }
-  },
-  "extra": {
-    "semitexa-module": {
-      "extends": null
-    }
-  },
-  "keywords": [
-    "semitexa",
-    "graphql",
-    "schema",
-    "payload",
-    "handler"
-  ]
+    "name": "semitexa/graphql",
+    "description": "Semitexa GraphQL - opt-in GraphQL operation discovery built on Payload DTO, Handler, and typed output contracts",
+    "type": "semitexa-module",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Semitexa",
+            "email": "support@semitexa.com"
+        }
+    ],
+    "require": {
+        "php": "^8.4",
+        "semitexa/core": "*",
+        "webonyx/graphql-php": "^15.16"
+    },
+    "autoload": {
+        "psr-4": {
+            "Semitexa\\Graphql\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Semitexa\\Graphql\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "semitexa-module": {
+            "extends": null
+        }
+    },
+    "keywords": [
+        "semitexa",
+        "graphql",
+        "schema",
+        "payload",
+        "handler"
+    ],
+    "version": "v0.1.3"
 }
