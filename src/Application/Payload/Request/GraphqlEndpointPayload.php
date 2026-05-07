@@ -94,7 +94,7 @@ final class GraphqlEndpointPayload
 
     public function setQuery(string $query): void
     {
-        $this->query = self::requireNotBlank(
+        $this->query = $this->requireNotBlank(
             'query',
             $query,
             'GraphQL `query` field is required and must be a non-empty string.',

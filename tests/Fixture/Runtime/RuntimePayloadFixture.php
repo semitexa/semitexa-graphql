@@ -32,7 +32,7 @@ final class RuntimePayloadFixture
 
     public function setId(string $id): void
     {
-        $this->id = self::requireNotBlank('id', $id, 'id must not be empty');
+        $this->id = $this->requireNotBlank('id', $id, 'id must not be empty');
     }
 
     public function getLimit(): int { return $this->limit; }
