@@ -35,5 +35,6 @@
         "schema",
         "payload",
         "handler"
-    ]
+    ],
+    "version": "v0.1.4"
 }
