@@ -48,39 +48,43 @@ final class GraphqlOperationRegistry implements GraphqlOperationRegistryInterfac
                 continue;
             }
 
-            $attribute = $this->resolveGraphqlAttribute($payloadClass);
-            if ($attribute === null) {
-                continue;
+            // #[ExposeAsGraphql] is repeatable: one route/handler may surface as
+            // several schema operations (e.g. a read exposed as BOTH a query and
+            // a subscription, driven by the same handler).
+            foreach ($this->resolveGraphqlAttributes($payloadClass) as $attribute) {
+                $rootType = $this->normalizeRootType($attribute->rootType, $payloadClass);
+                $outputClass = $this->normalizeOutputClass($attribute->output, $payloadClass);
+                $operationKey = $rootType . ':' . $attribute->field;
+
+                if (array_key_exists($operationKey, $seen)) {
+                    throw new InvalidArgumentException(sprintf(
+                        'Duplicate GraphQL operation "%s" declared by %s and %s.',
+                        $operationKey,
+                        $seen[$operationKey],
+                        $payloadClass,
+                    ));
+                }
+
+                $seen[$operationKey] = $payloadClass;
+
+                $operations[] = new ResolvedGraphqlOperation(
+                    field: $attribute->field,
+                    rootType: $rootType,
+                    payloadClass: $payloadClass,
+                    outputClass: $outputClass,
+                    routeName: $route->name,
+                    path: $route->path,
+                    httpMethods: $route->methods,
+                    handlerClasses: $this->extractHandlerClasses($route->handlers),
+                    responseClass: $route->responseClass,
+                    description: $attribute->description,
+                    list: $attribute->list,
+                    watchScopes: array_values(array_filter(
+                        $attribute->watchScopes,
+                        static fn (mixed $scope): bool => is_string($scope) && $scope !== '',
+                    )),
+                );
             }
-
-            $rootType = $this->normalizeRootType($attribute->rootType, $payloadClass);
-            $outputClass = $this->normalizeOutputClass($attribute->output, $payloadClass);
-            $operationKey = $rootType . ':' . $attribute->field;
-
-            if (array_key_exists($operationKey, $seen)) {
-                throw new InvalidArgumentException(sprintf(
-                    'Duplicate GraphQL operation "%s" declared by %s and %s.',
-                    $operationKey,
-                    $seen[$operationKey],
-                    $payloadClass,
-                ));
-            }
-
-            $seen[$operationKey] = $payloadClass;
-
-            $operations[] = new ResolvedGraphqlOperation(
-                field: $attribute->field,
-                rootType: $rootType,
-                payloadClass: $payloadClass,
-                outputClass: $outputClass,
-                routeName: $route->name,
-                path: $route->path,
-                httpMethods: $route->methods,
-                handlerClasses: $this->extractHandlerClasses($route->handlers),
-                responseClass: $route->responseClass,
-                description: $attribute->description,
-                list: $attribute->list,
-            );
         }
 
         $this->cache = $operations;
@@ -108,6 +112,16 @@ final class GraphqlOperationRegistry implements GraphqlOperationRegistryInterfac
         );
     }
 
+    public function subscriptions(): array
+    {
+        return array_values(
+            array_filter(
+                $this->all(),
+                static fn (ResolvedGraphqlOperation $operation): bool => $operation->isSubscription(),
+            ),
+        );
+    }
+
     public function find(string $rootType, string $field): ?ResolvedGraphqlOperation
     {
         $rootType = $this->normalizeRootType($rootType, null);
@@ -121,31 +135,39 @@ final class GraphqlOperationRegistry implements GraphqlOperationRegistryInterfac
         return null;
     }
 
-    private function resolveGraphqlAttribute(string $payloadClass): ?ExposeAsGraphql
+    /**
+     * Resolve every #[ExposeAsGraphql] attribute declared on the Payload (the
+     * attribute is repeatable). Empty list when none are present.
+     *
+     * @return list<ExposeAsGraphql>
+     */
+    private function resolveGraphqlAttributes(string $payloadClass): array
     {
         $reflection = new ReflectionClass($payloadClass);
         $attributes = $reflection->getAttributes(ExposeAsGraphql::class);
 
-        if ($attributes === []) {
-            return null;
+        $resolved = [];
+        foreach ($attributes as $attribute) {
+            /** @var ExposeAsGraphql $instance */
+            $instance = $attribute->newInstance();
+            $resolved[] = $instance;
         }
 
-        /** @var ExposeAsGraphql */
-        return $attributes[0]->newInstance();
+        return $resolved;
     }
 
     private function normalizeRootType(string $rootType, ?string $payloadClass): string
     {
         $rootType = strtolower(trim($rootType));
 
-        if ($rootType === 'query' || $rootType === 'mutation') {
+        if ($rootType === 'query' || $rootType === 'mutation' || $rootType === 'subscription') {
             return $rootType;
         }
 
         $target = $payloadClass ?? 'runtime lookup';
 
         throw new InvalidArgumentException(sprintf(
-            'Unsupported GraphQL root type "%s" for %s. Allowed values: query, mutation.',
+            'Unsupported GraphQL root type "%s" for %s. Allowed values: query, mutation, subscription.',
             $rootType,
             $target,
         ));

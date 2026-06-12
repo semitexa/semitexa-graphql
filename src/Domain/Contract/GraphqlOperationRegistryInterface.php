@@ -38,6 +38,13 @@ interface GraphqlOperationRegistryInterface
     public function mutations(): array;
 
     /**
+     * Return only root-level GraphQL subscriptions.
+     *
+     * @return list<ResolvedGraphqlOperation>
+     */
+    public function subscriptions(): array;
+
+    /**
      * Find an operation by root type and public field name.
      */
     public function find(string $rootType, string $field): ?ResolvedGraphqlOperation;

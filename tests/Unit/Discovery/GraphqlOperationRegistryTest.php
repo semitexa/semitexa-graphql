@@ -15,6 +15,8 @@ use Semitexa\Graphql\Tests\Fixture\InvalidRootTypeFixture;
 use Semitexa\Graphql\Tests\Fixture\MissingOutputClassFixture;
 use Semitexa\Graphql\Tests\Fixture\MutationPayloadFixture;
 use Semitexa\Graphql\Tests\Fixture\QueryPayloadFixture;
+use Semitexa\Graphql\Tests\Fixture\RepeatedExposureFixture;
+use Semitexa\Graphql\Tests\Fixture\SubscriptionPayloadFixture;
 use Semitexa\Graphql\Tests\Fixture\UnmarkedPayloadFixture;
 use Semitexa\Graphql\Tests\Support\StubRouteInspectionRegistry;
 
@@ -110,8 +112,54 @@ final class GraphqlOperationRegistryTest extends TestCase
         ]);
 
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Unsupported GraphQL root type "subscription"');
+        $this->expectExceptionMessage('Unsupported GraphQL root type "telepathy"');
         $registry->all();
+    }
+
+    public function test_subscription_root_type_is_accepted_and_partitioned(): void
+    {
+        $registry = $this->makeRegistry([
+            StubRouteInspectionRegistry::metadata(QueryPayloadFixture::class, 'q'),
+            StubRouteInspectionRegistry::metadata(SubscriptionPayloadFixture::class, 's'),
+        ]);
+
+        // subscription no longer throws; it partitions away from queries/mutations.
+        self::assertCount(1, $registry->subscriptions());
+        self::assertCount(1, $registry->queries());
+        self::assertCount(0, $registry->mutations());
+
+        $sub = $registry->subscriptions()[0];
+        self::assertSame('thingChanges', $sub->field);
+        self::assertSame('subscription', $sub->rootType);
+        self::assertTrue($sub->isSubscription());
+        self::assertFalse($sub->isQuery());
+
+        // watchScopes is parsed/stored, with non-string / empty entries filtered.
+        self::assertSame(['things'], $sub->watchScopes);
+
+        self::assertNotNull($registry->find('subscription', 'thingChanges'));
+    }
+
+    public function test_repeatable_attribute_yields_one_operation_per_exposure(): void
+    {
+        $registry = $this->makeRegistry([
+            StubRouteInspectionRegistry::metadata(RepeatedExposureFixture::class, 'r'),
+        ]);
+
+        // One Payload → two operations, same payloadClass, different root types.
+        $ops = $registry->all();
+        self::assertCount(2, $ops);
+        self::assertCount(1, $registry->queries());
+        self::assertCount(1, $registry->subscriptions());
+        self::assertSame(
+            RepeatedExposureFixture::class,
+            $registry->subscriptions()[0]->payloadClass,
+        );
+        self::assertSame(
+            $registry->queries()[0]->payloadClass,
+            $registry->subscriptions()[0]->payloadClass,
+            'both operations are driven by the same Payload/handler',
+        );
     }
 
     public function test_missing_output_class_throws(): void

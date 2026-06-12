@@ -115,6 +115,21 @@ final class SchemaBuilder implements SchemaProviderInterface
             ]);
         }
 
+        // Subscription root: assembled from discovered subscription operations so
+        // a `subscription { … }` document parses and validates against the schema
+        // (introspection then reports a non-null subscriptionType). Each field
+        // resolves through the SAME Payload → Handler → Resource pipeline a query
+        // uses — webonyx executes a subscription operation one-shot (query-style)
+        // through GraphQL::executeQuery(); the held-open SSE re-run source is
+        // wired in Phase 4, not here.
+        $subscriptions = $this->buildRootFields($this->operations->subscriptions());
+        if ($subscriptions !== []) {
+            $config['subscription'] = new ObjectType([
+                'name' => 'Subscription',
+                'fields' => $subscriptions,
+            ]);
+        }
+
         return new Schema($config);
     }
 

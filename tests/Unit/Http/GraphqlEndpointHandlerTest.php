@@ -10,6 +10,8 @@ use Semitexa\Graphql\Domain\Contract\GraphqlExecutorInterface;
 use Semitexa\Graphql\Application\Handler\PayloadHandler\GraphqlEndpointHandler;
 use Semitexa\Graphql\Application\Payload\Request\GraphqlEndpointPayload;
 use Semitexa\Graphql\Application\Resource\Response\GraphqlEndpointResource;
+use Semitexa\Graphql\Application\Service\Runtime\GraphqlOperationTypeResolver;
+use Semitexa\Graphql\Application\Service\Runtime\GraphqlSseSubscriptionStreamer;
 use Semitexa\Graphql\Domain\Model\GraphqlExecutionResult;
 
 /**
@@ -114,6 +116,21 @@ final class GraphqlEndpointHandlerTest extends TestCase
     {
         $handler = new GraphqlEndpointHandler();
         (new ReflectionProperty($handler, 'executor'))->setValue($handler, $executor);
+
+        // The dual-mode fork seam. With no live Swoole socket (the unit-test
+        // case: no coroutine context) tryServe() returns null, so every test
+        // here exercises the unchanged one-shot branch — proving the fork does
+        // not disturb request-response when SSE is not in play.
+        $streamer = new GraphqlSseSubscriptionStreamer();
+        (new ReflectionProperty($streamer, 'operationType'))
+            ->setValue($streamer, new GraphqlOperationTypeResolver());
+        // The streamer also needs the executor (Phase 2: it executes the
+        // subscription one-shot for the initial frame). Bind the same stub;
+        // these tests never reach execution because tryServe() returns null
+        // with no live Swoole socket, but the wiring must be complete.
+        (new ReflectionProperty($streamer, 'executor'))->setValue($streamer, $executor);
+        (new ReflectionProperty($handler, 'subscriptionStreamer'))->setValue($handler, $streamer);
+
         return $handler;
     }
 }

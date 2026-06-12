@@ -14,7 +14,7 @@ A real, executable GraphQL runtime for Semitexa applications. Built on the same 
 
 Application modules (e.g. a demo under `src/modules/`) only need to declare their domain operations with `#[AsPayload] + #[ExposeAsGraphql]`. The interactive runner page, demo handlers, and any application-specific schema authoring stay in the application — the package owns transport and runtime, the application owns the schema content. Playground does not own the GraphQL HTTP route.
 
-The interactive demo at `GET /graphql-showcase` (lives in Playground, not here) walks a developer through four real surfaces: the package's POST /graphql runner, the Resource DTO multi-profile route at `/playground/customers/{id}` (JSON / JSON-LD / GraphQL response), `?include=` lazy relation expansion, and the `?query=` selection-set bridge. All four sections fire real HTTP — none are mocked.
+The interactive demo at `GET /playground/graphql` (lives in Playground, not here) walks a developer through four real surfaces: the package's POST /graphql runner, the Resource DTO multi-profile route at `/playground/customers/{id}` (JSON / JSON-LD / GraphQL response), `?include=` lazy relation expansion, and the `?query=` selection-set bridge. All four sections fire real HTTP — none are mocked.
 
 ## Configuring the route path
 

@@ -16,6 +16,9 @@ final readonly class ResolvedGraphqlOperation
     /**
      * @param list<string> $httpMethods
      * @param list<string> $handlerClasses
+     * @param list<string> $watchScopes Resource scope keys a `subscription`
+     *        rides; populated from `#[ExposeAsGraphql(watchScopes: ...)]`.
+     *        DECLARED here, consumed in Phase 4 (Redis subscription registration).
      */
     public function __construct(
         public string $field,
@@ -29,6 +32,7 @@ final readonly class ResolvedGraphqlOperation
         public string $responseClass,
         public string $description,
         public bool $list = false,
+        public array $watchScopes = [],
     ) {}
 
     public function isQuery(): bool
@@ -39,5 +43,10 @@ final readonly class ResolvedGraphqlOperation
     public function isMutation(): bool
     {
         return $this->rootType === 'mutation';
+    }
+
+    public function isSubscription(): bool
+    {
+        return $this->rootType === 'subscription';
     }
 }

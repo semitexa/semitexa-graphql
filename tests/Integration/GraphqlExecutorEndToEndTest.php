@@ -140,6 +140,71 @@ final class GraphqlExecutorEndToEndTest extends TestCase
         self::assertSame(['__schema' => ['queryType' => ['name' => 'Query']]], $result->data);
     }
 
+    // --- Phase 2 (PROMPT 117) Step 2.1 + 2.2 -------------------------------
+
+    public function test_subscription_type_is_present_in_introspection_query_unchanged(): void
+    {
+        $executor = $this->buildExecutor();
+
+        // Checkpoint 2.1: subscriptionType is non-null AND queryType is still Query.
+        $result = $executor->execute(
+            '{ __schema { queryType { name } subscriptionType { name } } }'
+        );
+
+        self::assertSame([], $result->errors);
+        self::assertSame([
+            '__schema' => [
+                'queryType' => ['name' => 'Query'],
+                'subscriptionType' => ['name' => 'Subscription'],
+            ],
+        ], $result->data);
+    }
+
+    public function test_subscription_document_parses_and_validates_no_allowed_values_throw(): void
+    {
+        $executor = $this->buildExecutor();
+
+        // Pre-Phase-2 this threw "Allowed values: query, mutation" at registry
+        // build. It must now parse + validate against the Subscription root.
+        $result = $executor->execute(
+            'subscription S { runtimeFixtureChanges(id: "abc") { id } }'
+        );
+
+        // No GRAPHQL_VALIDATION error (the field exists on the Subscription root).
+        $codes = array_map(
+            static fn (array $e): mixed => $e['extensions']['code'] ?? null,
+            $result->errors,
+        );
+        self::assertNotContains('GRAPHQL_VALIDATION', $codes);
+        // The document parsed + validated and the field resolved to real data.
+        self::assertIsArray($result->data);
+        self::assertArrayHasKey('runtimeFixtureChanges', $result->data);
+    }
+
+    public function test_subscription_executes_one_shot_query_style_returning_real_rows(): void
+    {
+        $executor = $this->buildExecutor();
+
+        // Step 2.2 checkpoint: a subscription operation run through the normal
+        // executor entrypoint resolves its root field exactly as a query field
+        // does (webonyx uses executeFields, NOT createSourceEventStream), so it
+        // returns a real {data, errors} ExecutionResult with real fixture data.
+        $result = $executor->execute(
+            'subscription S { runtimeFixtureChanges(id: "abc", limit: 7) { id name count enabled score } }'
+        );
+
+        self::assertSame([], $result->errors);
+        self::assertSame([
+            'runtimeFixtureChanges' => [
+                'id' => 'abc',
+                'name' => 'name-abc',
+                'count' => 7,
+                'enabled' => true,
+                'score' => 0.5,
+            ],
+        ], $result->data);
+    }
+
     private function buildExecutor(): WebonyxGraphqlExecutor
     {
         $routes = new StubRouteInspectionRegistry([
