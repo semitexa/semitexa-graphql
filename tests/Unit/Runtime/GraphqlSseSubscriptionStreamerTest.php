@@ -52,7 +52,9 @@ final class GraphqlSseSubscriptionStreamerTest extends TestCase
         self::assertArrayNotHasKey('event', $frame);
         // Real executed ExecutionResult body — no Phase-1 canned marker.
         self::assertSame(['articleChanges' => [['id' => 'gql_1', 'title' => 'Hello']]], $frame['data']);
-        self::assertSame([], $frame['errors']);
+        // GraphQL spec: `errors` must NOT be present when no errors occurred —
+        // the frame is built from the same toArray() the one-shot body uses.
+        self::assertArrayNotHasKey('errors', $frame);
         self::assertArrayNotHasKey('_phase1', $frame['data']);
     }
 
@@ -69,7 +71,9 @@ final class GraphqlSseSubscriptionStreamerTest extends TestCase
         $frame = $this->invokeInitialFrame($streamer, $payload);
 
         self::assertSame('next', $frame['_sse_event']);
-        self::assertNull($frame['data']);
+        // Spec envelope via toArray(): a request error (no execution) omits
+        // `data` entirely rather than carrying an explicit null.
+        self::assertArrayNotHasKey('data', $frame);
         self::assertSame('INTERNAL_SERVER_ERROR', $frame['errors'][0]['extensions']['code']);
     }
 
@@ -132,7 +136,7 @@ final class GraphqlSseSubscriptionStreamerTest extends TestCase
         $body = $served->getRenderContext();
         self::assertSame('next', $body['_sse_event']);
         self::assertSame(['articleChanges' => [['id' => 'a1']]], $body['data']);
-        self::assertSame([], $body['errors']);
+        self::assertArrayNotHasKey('errors', $body);
         // Re-run body rides the NORMAL renderer — never marked already-sent
         // (already-sent would mean the socket was grabbed: forbidden on a tick).
         self::assertFalse($served->isAlreadySent());

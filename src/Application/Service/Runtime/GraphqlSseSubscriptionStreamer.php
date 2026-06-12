@@ -358,17 +358,10 @@ final class GraphqlSseSubscriptionStreamer
             $payload->getOperationName(),
         );
 
-        $frame = [
-            self::SSE_PASSTHROUGH_EVENT_KEY => 'next',
-            'data' => $result->data,
-            'errors' => $result->errors,
-        ];
-
-        if ($result->extensions !== []) {
-            $frame['extensions'] = $result->extensions;
-        }
-
-        return $frame;
+        // Build from toArray() so the framed body and the one-shot JSON body
+        // are the SAME spec envelope — `errors` must not be present when no
+        // errors occurred (GraphQL spec), and `extensions` rides only when set.
+        return [self::SSE_PASSTHROUGH_EVENT_KEY => 'next'] + $result->toArray();
     }
 
     /**
