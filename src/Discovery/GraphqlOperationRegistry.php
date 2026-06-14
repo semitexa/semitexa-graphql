@@ -7,7 +7,10 @@ namespace Semitexa\Graphql\Discovery;
 use ReflectionClass;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Attribute\SatisfiesServiceContract;
+use Semitexa\Core\Contract\RouteContractAssemblerInterface;
 use Semitexa\Core\Contract\RouteInspectionRegistryInterface;
+use Semitexa\Core\Http\RouteContract;
+use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Graphql\Attribute\ExposeAsGraphql;
 use Semitexa\Graphql\Domain\Contract\GraphqlOperationRegistryInterface;
 use InvalidArgumentException;
@@ -29,6 +32,16 @@ final class GraphqlOperationRegistry implements GraphqlOperationRegistryInterfac
     #[InjectAsReadonly]
     protected RouteInspectionRegistryInterface $routes;
 
+    /**
+     * Core seam that joins a route to its resolved `#[ResourceObject]` and
+     * collection facts. Used to derive an operation's output type + `list`
+     * from the route contract instead of from `#[ExposeAsGraphql]` params.
+     * Optional: when unset (partial test wiring) the registry degrades to the
+     * attribute-declared `output:`/`list:` values.
+     */
+    #[InjectAsReadonly]
+    protected RouteContractAssemblerInterface $contracts;
+
     /** @var list<ResolvedGraphqlOperation>|null */
     private ?array $cache = null;
 
@@ -48,39 +61,78 @@ final class GraphqlOperationRegistry implements GraphqlOperationRegistryInterfac
                 continue;
             }
 
-            $attribute = $this->resolveGraphqlAttribute($payloadClass);
-            if ($attribute === null) {
+            // #[ExposeAsGraphql] is repeatable: one route/handler may surface as
+            // several schema operations (e.g. a read exposed as BOTH a query and
+            // a subscription, driven by the same handler).
+            $attributes = $this->resolveGraphqlAttributes($payloadClass);
+            if ($attributes === []) {
+                // Not a GraphQL route — skip BEFORE assembling its contract, so a
+                // large app pays one RouteContract assembly per EXPOSED route,
+                // not one per HTTP route.
                 continue;
             }
 
-            $rootType = $this->normalizeRootType($attribute->rootType, $payloadClass);
-            $outputClass = $this->normalizeOutputClass($attribute->output, $payloadClass);
-            $operationKey = $rootType . ':' . $attribute->field;
+            // Resolve the route's output contract ONCE per route: the resolved
+            // resource type + collection flag are route-level facts shared by
+            // every exposure on this payload.
+            $contract     = $this->resolveContract($payloadClass, $route->responseClass);
+            $resourceType = $contract?->output?->type;
+            $isCollection = $contract?->isCollection ?? false;
 
-            if (array_key_exists($operationKey, $seen)) {
-                throw new InvalidArgumentException(sprintf(
-                    'Duplicate GraphQL operation "%s" declared by %s and %s.',
-                    $operationKey,
-                    $seen[$operationKey],
-                    $payloadClass,
-                ));
+            foreach ($attributes as $attribute) {
+                if ($attribute->rootType !== null && trim($attribute->rootType) !== '') {
+                    $rootType = $this->normalizeRootType($attribute->rootType, $payloadClass);
+                } else {
+                    $rootType = $this->deriveRootTypeFromMethods($route->methods);
+                    if ($rootType === null) {
+                        // Underivable (a route with no GET/HEAD/POST/PUT/PATCH/DELETE
+                        // and no explicit rootType) is a per-operation misconfig —
+                        // skip THIS exposure loudly rather than abort discovery for
+                        // every other GraphQL operation in the app.
+                        StaticLoggerBridge::warning('graphql', sprintf(
+                            'Cannot derive a GraphQL rootType for %s on route "%s" from methods '
+                            . '[%s]; declare rootType explicitly. Skipping this operation.',
+                            $payloadClass,
+                            $route->name,
+                            implode(', ', $route->methods),
+                        ));
+                        continue;
+                    }
+                }
+                $outputClass = $this->normalizeOutputClass($attribute->output, $payloadClass);
+                $operationKey = $rootType . ':' . $attribute->field;
+
+                if (array_key_exists($operationKey, $seen)) {
+                    throw new InvalidArgumentException(sprintf(
+                        'Duplicate GraphQL operation "%s" declared by %s and %s.',
+                        $operationKey,
+                        $seen[$operationKey],
+                        $payloadClass,
+                    ));
+                }
+
+                $seen[$operationKey] = $payloadClass;
+
+                $operations[] = new ResolvedGraphqlOperation(
+                    field: $attribute->field,
+                    rootType: $rootType,
+                    payloadClass: $payloadClass,
+                    outputClass: $outputClass,
+                    routeName: $route->name,
+                    path: $route->path,
+                    httpMethods: $route->methods,
+                    handlerClasses: $this->extractHandlerClasses($route->handlers),
+                    responseClass: $route->responseClass,
+                    description: $attribute->description,
+                    // `list` derives from the route contract's reliable
+                    // isCollection signal (true for any collection response,
+                    // including bare ones). The attribute flag remains an
+                    // explicit override for routes/tests without a contract.
+                    list: $attribute->list || $isCollection,
+                    watchScopes: $this->normalizeWatchScopes($attribute->watchScopes),
+                    resourceType: $resourceType,
+                );
             }
-
-            $seen[$operationKey] = $payloadClass;
-
-            $operations[] = new ResolvedGraphqlOperation(
-                field: $attribute->field,
-                rootType: $rootType,
-                payloadClass: $payloadClass,
-                outputClass: $outputClass,
-                routeName: $route->name,
-                path: $route->path,
-                httpMethods: $route->methods,
-                handlerClasses: $this->extractHandlerClasses($route->handlers),
-                responseClass: $route->responseClass,
-                description: $attribute->description,
-                list: $attribute->list,
-            );
         }
 
         $this->cache = $operations;
@@ -108,6 +160,16 @@ final class GraphqlOperationRegistry implements GraphqlOperationRegistryInterfac
         );
     }
 
+    public function subscriptions(): array
+    {
+        return array_values(
+            array_filter(
+                $this->all(),
+                static fn (ResolvedGraphqlOperation $operation): bool => $operation->isSubscription(),
+            ),
+        );
+    }
+
     public function find(string $rootType, string $field): ?ResolvedGraphqlOperation
     {
         $rootType = $this->normalizeRootType($rootType, null);
@@ -121,31 +183,124 @@ final class GraphqlOperationRegistry implements GraphqlOperationRegistryInterfac
         return null;
     }
 
-    private function resolveGraphqlAttribute(string $payloadClass): ?ExposeAsGraphql
+    /**
+     * Resolve every #[ExposeAsGraphql] attribute declared on the Payload (the
+     * attribute is repeatable). Empty list when none are present.
+     *
+     * @return list<ExposeAsGraphql>
+     */
+    private function resolveGraphqlAttributes(string $payloadClass): array
     {
         $reflection = new ReflectionClass($payloadClass);
         $attributes = $reflection->getAttributes(ExposeAsGraphql::class);
 
-        if ($attributes === []) {
+        $resolved = [];
+        foreach ($attributes as $attribute) {
+            /** @var ExposeAsGraphql $instance */
+            $instance = $attribute->newInstance();
+            $resolved[] = $instance;
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * Assemble the route's output contract, degrading to null when the
+     * assembler is unwired (partial test construction) or the contract cannot
+     * be built — discovery must never break on a single unresolvable route.
+     */
+    private function resolveContract(string $payloadClass, ?string $responseClass): ?RouteContract
+    {
+        if (!isset($this->contracts)) {
             return null;
         }
 
-        /** @var ExposeAsGraphql */
-        return $attributes[0]->newInstance();
+        try {
+            return $this->contracts->assemble($payloadClass, $responseClass);
+        } catch (\Throwable $e) {
+            // Don't let one route's contract failure break GraphQL discovery —
+            // but make it observable: with `output:` no longer on the marker, a
+            // swallowed failure means the operation silently degrades to the Json
+            // scalar instead of its Resource type. Surface it so the misconfig is
+            // diagnosable rather than an invisible schema downgrade.
+            StaticLoggerBridge::warning('graphql', sprintf(
+                'RouteContract assembly failed for %s; GraphQL output type falls back to '
+                . 'the Json scalar: %s',
+                $payloadClass,
+                $e->getMessage(),
+            ));
+
+            return null;
+        }
+    }
+
+    /**
+     * Derive a root type from a route's HTTP methods when `#[ExposeAsGraphql]`
+     * omits `rootType`: writes (`POST`/`PUT`/`PATCH`/`DELETE`) → mutation,
+     * reads (`GET`/`HEAD`) → query. Writes win on a mixed-method route.
+     * `subscription` has no HTTP analogue and so cannot be derived — it must be
+     * declared explicitly.
+     *
+     * Returns null when no method is classifiable; the caller skips that single
+     * exposure rather than aborting discovery for the whole schema.
+     *
+     * @param list<string> $methods
+     */
+    private function deriveRootTypeFromMethods(array $methods): ?string
+    {
+        $upper = array_map(static fn (mixed $m): string => strtoupper((string) $m), $methods);
+
+        foreach ($upper as $method) {
+            if (in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
+                return 'mutation';
+            }
+        }
+        foreach ($upper as $method) {
+            if (in_array($method, ['GET', 'HEAD'], true)) {
+                return 'query';
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Trim each declared watch scope and drop blanks — including whitespace-only
+     * entries, which would otherwise be stored verbatim as undebuggable
+     * invalidation-channel keys — storing the trimmed value. Non-strings are
+     * dropped.
+     *
+     * @param array<mixed> $scopes
+     * @return list<string>
+     */
+    private function normalizeWatchScopes(array $scopes): array
+    {
+        $result = [];
+        foreach ($scopes as $scope) {
+            if (!is_string($scope)) {
+                continue;
+            }
+            $trimmed = trim($scope);
+            if ($trimmed !== '') {
+                $result[] = $trimmed;
+            }
+        }
+
+        return $result;
     }
 
     private function normalizeRootType(string $rootType, ?string $payloadClass): string
     {
         $rootType = strtolower(trim($rootType));
 
-        if ($rootType === 'query' || $rootType === 'mutation') {
+        if ($rootType === 'query' || $rootType === 'mutation' || $rootType === 'subscription') {
             return $rootType;
         }
 
         $target = $payloadClass ?? 'runtime lookup';
 
         throw new InvalidArgumentException(sprintf(
-            'Unsupported GraphQL root type "%s" for %s. Allowed values: query, mutation.',
+            'Unsupported GraphQL root type "%s" for %s. Allowed values: query, mutation, subscription.',
             $rootType,
             $target,
         ));

@@ -10,6 +10,8 @@ use GraphQL\Type\Definition\Type;
 use GraphQL\Type\Schema;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Attribute\SatisfiesServiceContract;
+use Semitexa\Core\Resource\Metadata\ResourceMetadataRegistry;
+use Semitexa\Core\Resource\Metadata\ResourceObjectMetadata;
 use Semitexa\Graphql\Domain\Contract\GraphqlOperationRegistryInterface;
 use Semitexa\Graphql\Domain\Contract\HandlerInvokerInterface;
 use Semitexa\Graphql\Domain\Contract\PayloadHydratorInterface;
@@ -51,6 +53,14 @@ final class SchemaBuilder implements SchemaProviderInterface
     #[InjectAsReadonly]
     protected ResourceSerializerInterface $resourceSerializer;
 
+    /**
+     * Canonical Resource metadata — shared with OpenAPI. When an operation's
+     * route response is a registered `#[ResourceObject]`, its GraphQL output
+     * type is derived from here instead of from an ad-hoc `output:` DTO.
+     */
+    #[InjectAsReadonly]
+    protected ResourceMetadataRegistry $resourceMetadata;
+
     private ?Schema $schema = null;
 
     private ?JsonScalarType $jsonScalar = null;
@@ -75,6 +85,7 @@ final class SchemaBuilder implements SchemaProviderInterface
         PayloadHydratorInterface $payloadHydrator,
         HandlerInvokerInterface $handlerInvoker,
         ResourceSerializerInterface $resourceSerializer,
+        ?ResourceMetadataRegistry $resourceMetadata = null,
     ): void {
         $this->operations = $operations;
         $this->outputTypes = $outputTypes;
@@ -82,6 +93,9 @@ final class SchemaBuilder implements SchemaProviderInterface
         $this->payloadHydrator = $payloadHydrator;
         $this->handlerInvoker = $handlerInvoker;
         $this->resourceSerializer = $resourceSerializer;
+        // Empty registry → no class resolves → legacy output-class path. Keeps
+        // pre-existing six-arg test calls behaving exactly as before.
+        $this->resourceMetadata = $resourceMetadata ?? new ResourceMetadataRegistry();
         $this->schema = null;
     }
 
@@ -115,6 +129,21 @@ final class SchemaBuilder implements SchemaProviderInterface
             ]);
         }
 
+        // Subscription root: assembled from discovered subscription operations so
+        // a `subscription { … }` document parses and validates against the schema
+        // (introspection then reports a non-null subscriptionType). Each field
+        // resolves through the SAME Payload → Handler → Resource pipeline a query
+        // uses — webonyx executes a subscription operation one-shot (query-style)
+        // through GraphQL::executeQuery(); the held-open SSE re-run source is
+        // wired in Phase 4, not here.
+        $subscriptions = $this->buildRootFields($this->operations->subscriptions());
+        if ($subscriptions !== []) {
+            $config['subscription'] = new ObjectType([
+                'name' => 'Subscription',
+                'fields' => $subscriptions,
+            ]);
+        }
+
         return new Schema($config);
     }
 
@@ -140,9 +169,23 @@ final class SchemaBuilder implements SchemaProviderInterface
     /** @return array<string, mixed> */
     private function buildFieldDefinition(ResolvedGraphqlOperation $op): array
     {
-        $outputType = $op->outputClass !== null
-            ? $this->outputTypes->get($op->outputClass)
-            : $this->jsonScalar();
+        $resourceMeta = $this->resolveResourceMeta($op);
+
+        // Canonical path: type derived from the route's #[ResourceObject], the
+        // same contract OpenAPI uses. forResource() returns null when the
+        // resource yields no GraphQL fields (relation-only) — fall through.
+        $outputType = $resourceMeta !== null
+            ? $this->outputTypes->forResource($resourceMeta)
+            : null;
+
+        if ($outputType === null && $op->outputClass !== null) {
+            // Legacy fallback: reflect the declared output DTO.
+            $outputType = $this->outputTypes->get($op->outputClass);
+        }
+
+        // Last resort: an untyped Json scalar (e.g. deleteArticle, or a resource
+        // that couldn't be typed yet).
+        $outputType ??= $this->jsonScalar();
 
         $type = $op->list ? Type::listOf($outputType) : $outputType;
 
@@ -156,6 +199,46 @@ final class SchemaBuilder implements SchemaProviderInterface
                 return $this->resolveOperation($op, $args);
             },
         ];
+    }
+
+    /**
+     * Resolves the canonical Resource metadata backing an operation, if any.
+     *
+     * Preference order: the route's actual response class, then the legacy
+     * `output:` contract. Phase 1 only recognises a class that is itself a
+     * registered `#[ResourceObject]`; response-envelope indirection
+     * (`#[ProducesResourceObject]`) lives in semitexa-api and is intentionally
+     * NOT reached into from here to avoid a cross-package dependency — that
+     * bridge belongs in a later, core-level seam.
+     */
+    private function resolveResourceMeta(ResolvedGraphqlOperation $op): ?ResourceObjectMetadata
+    {
+        // Defensive: if the registry was not injected (e.g. a partial test
+        // wiring), degrade to the legacy output-class path rather than fatal.
+        if (!isset($this->resourceMetadata)) {
+            return null;
+        }
+
+        // Primary path: the route contract already resolved this operation's
+        // Resource (via #[ProducesResourceObject]/#[ProducesResourceCollection]
+        // or a directly-registered response) to a registry TYPE handle. This is
+        // what lets #[ExposeAsGraphql] carry no `output:` at all.
+        if ($op->resourceType !== null) {
+            $meta = $this->resourceMetadata->findByType($op->resourceType);
+            if ($meta !== null) {
+                return $meta;
+            }
+        }
+
+        // Fallback: a class that is itself a registered #[ResourceObject],
+        // named directly by the route response or a legacy `output:` contract.
+        foreach ([$op->responseClass, $op->outputClass] as $candidate) {
+            if (is_string($candidate) && $candidate !== '' && $this->resourceMetadata->has($candidate)) {
+                return $this->resourceMetadata->get($candidate);
+            }
+        }
+
+        return null;
     }
 
     /**
