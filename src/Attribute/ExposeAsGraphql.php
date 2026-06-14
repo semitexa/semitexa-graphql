@@ -9,12 +9,15 @@ use Attribute;
 /**
  * Opts a Payload DTO into GraphQL discovery.
  *
- * This attribute is intentionally explicit. Semitexa does not assume that every
- * HTTP route is automatically a good GraphQL field. GraphQL exposure only
- * happens when the operation owner declares:
- * - which root type it belongs to (`query`, `mutation`, or `subscription`)
- * - which field name should appear in the schema
- * - which typed output contract is safe to expose
+ * Exposure is opt-in at the OPERATION level: Semitexa does not assume every HTTP
+ * route is a good GraphQL field. But the marker carries no TYPE information — the
+ * output type is resolved from the route's contract (the same #[ResourceObject]
+ * OpenAPI reads) — and `rootType` DERIVES from the HTTP method when omitted
+ * (`GET`/`HEAD` → query, `POST`/`PUT`/`PATCH`/`DELETE` → mutation). Only what a
+ * route cannot imply needs declaring:
+ * - the field name (`field`)
+ * - `rootType: 'subscription'` — a live read has no HTTP-method analogue
+ * - any `rootType` that intentionally diverges from the HTTP-method convention
  *
  * The attribute is REPEATABLE: a single Payload/route can be exposed as more
  * than one schema operation — e.g. a read route surfaced as both a `query` and
@@ -25,13 +28,12 @@ use Attribute;
  * Usage:
  * ```php
  * #[AsPublicPayload(path: '/graphql-demo/articles', methods: ['GET'])]
- * #[ExposeAsGraphql(field: 'articles', rootType: 'query', output: Article::class, list: true)]
+ * #[ExposeAsGraphql(field: 'articles', list: true)]              // rootType derived: query
  * #[ExposeAsGraphql(
  *     field: 'articleChanges',
- *     rootType: 'subscription',
- *     output: Article::class,
+ *     rootType: 'subscription',                                  // explicit: no HTTP analogue
  *     list: true,
- *     watchScopes: ['playground_articles'],   // consumed in Phase 4 (Redis subscribe)
+ *     watchScopes: ['playground_articles'],
  * )]
  * final class ArticleListQueryPayload { ... }
  * ```
@@ -50,8 +52,13 @@ final class ExposeAsGraphql
     public function __construct(
         /** Public GraphQL field name, e.g. `productBySlug` or `articleChanges`. */
         public readonly string $field,
-        /** GraphQL root type: `query` (reads), `mutation` (writes), `subscription` (live reads). */
-        public readonly string $rootType = 'query',
+        /**
+         * GraphQL root type: `query` (reads), `mutation` (writes), `subscription`
+         * (live reads). `null` (the default) means DERIVE from the route's HTTP
+         * method — `GET`/`HEAD` → query, `POST`/`PUT`/`PATCH`/`DELETE` → mutation.
+         * `subscription` must always be declared explicitly.
+         */
+        public readonly ?string $rootType = null,
         /** Canonical typed output contract to expose in the GraphQL schema. */
         public readonly ?string $output = null,
         /** Optional human-readable description for generated schema/docs. */

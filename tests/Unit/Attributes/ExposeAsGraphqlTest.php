@@ -33,11 +33,13 @@ final class ExposeAsGraphqlTest extends TestCase
         self::assertSame('fetch a product', $attr->description);
     }
 
-    public function test_attribute_defaults_root_type_to_query(): void
+    public function test_attribute_defaults_root_type_to_null_for_derivation(): void
     {
         $attr = new ExposeAsGraphql(field: 'foo');
 
-        self::assertSame('query', $attr->rootType);
+        // null rootType signals "derive from the route's HTTP method" — the
+        // registry resolves it; the attribute itself pins nothing.
+        self::assertNull($attr->rootType);
         self::assertNull($attr->output);
         self::assertSame('', $attr->description);
     }

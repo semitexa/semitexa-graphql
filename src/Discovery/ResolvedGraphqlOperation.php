@@ -33,6 +33,13 @@ final readonly class ResolvedGraphqlOperation
         public string $description,
         public bool $list = false,
         public array $watchScopes = [],
+        /**
+         * Registry TYPE handle of the `#[ResourceObject]` this operation
+         * returns, resolved from the route's `RouteContract` (the same contract
+         * OpenAPI reads). `null` when the route exposes no resource. This is the
+         * type source that lets `#[ExposeAsGraphql]` drop its `output:` param.
+         */
+        public ?string $resourceType = null,
     ) {}
 
     public function isQuery(): bool

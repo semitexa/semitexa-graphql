@@ -15,6 +15,7 @@ use Semitexa\Graphql\Application\Service\Schema\OutputTypeRegistry;
 use Semitexa\Graphql\Application\Service\Schema\PayloadArgumentBuilder;
 use Semitexa\Graphql\Application\Service\Schema\ScalarTypeMapper;
 use Semitexa\Graphql\Application\Service\Schema\SchemaBuilder;
+use Semitexa\Core\Resource\Metadata\ResourceMetadataRegistry;
 use Semitexa\Graphql\Tests\Fixture\Runtime\RuntimePayloadFixture;
 use Semitexa\Graphql\Tests\Fixture\Runtime\RuntimeResourceFixture;
 use Semitexa\Graphql\Tests\Support\StubRouteInspectionRegistry;
@@ -52,6 +53,7 @@ final class SchemaBuilderConstructorlessBootTest extends TestCase
         $this->wireProperty($builder, 'payloadHydrator', new PayloadArgsHydrator());
         $this->wireProperty($builder, 'handlerInvoker', new ContainerHandlerInvoker());
         $this->wireProperty($builder, 'resourceSerializer', new RenderContextResourceSerializer());
+        $this->wireProperty($builder, 'resourceMetadata', new ResourceMetadataRegistry());
 
         $schema = $builder->getSchema();
 
@@ -102,6 +104,7 @@ final class SchemaBuilderConstructorlessBootTest extends TestCase
         $this->wireProperty($builder, 'payloadHydrator', new PayloadArgsHydrator());
         $this->wireProperty($builder, 'handlerInvoker', new ContainerHandlerInvoker());
         $this->wireProperty($builder, 'resourceSerializer', new RenderContextResourceSerializer());
+        $this->wireProperty($builder, 'resourceMetadata', new ResourceMetadataRegistry());
 
         $schema = $builder->getSchema();
         self::assertSame('Query', $schema->getQueryType()->name);
