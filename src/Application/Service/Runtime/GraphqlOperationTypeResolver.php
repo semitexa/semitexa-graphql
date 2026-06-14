@@ -79,6 +79,16 @@ final class GraphqlOperationTypeResolver
             return null;
         }
 
+        // A document with MULTIPLE operations REQUIRES an operationName; without
+        // one, execution is ambiguous and webonyx rejects it. Returning the
+        // first kind would route an ambiguous document into the subscription/SSE
+        // fork — opening a held stream for a request that is really a validation
+        // error. Stay undetermined so the one-shot branch surfaces the canonical
+        // "must provide operation name" error.
+        if (count($operations) > 1) {
+            return null;
+        }
+
         return $operations[0]->operation;
     }
 
@@ -119,20 +129,27 @@ final class GraphqlOperationTypeResolver
             return [];
         }
 
-        $matched = null;
+        /** @var list<OperationDefinitionNode> $operations */
+        $operations = [];
         foreach ($document->definitions as $definition) {
-            if (!$definition instanceof OperationDefinitionNode) {
-                continue;
+            if ($definition instanceof OperationDefinitionNode) {
+                $operations[] = $definition;
             }
-            if ($operationName !== null && $operationName !== '') {
-                if (($definition->name?->value) === $operationName) {
-                    $matched = $definition;
+        }
+
+        $matched = null;
+        if ($operationName !== null && $operationName !== '') {
+            foreach ($operations as $operation) {
+                if (($operation->name?->value) === $operationName) {
+                    $matched = $operation;
                     break;
                 }
-                continue;
             }
-            $matched = $definition;
-            break;
+        } elseif (count($operations) === 1) {
+            // Only an unambiguous single-operation document may select the sole
+            // operation. Multiple operations without operationName is ambiguous
+            // (see resolveOperationType()) and must not register watch scopes.
+            $matched = $operations[0];
         }
 
         if ($matched === null || $matched->operation !== 'subscription') {

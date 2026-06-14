@@ -10,6 +10,7 @@ use Semitexa\Core\Attribute\SatisfiesServiceContract;
 use Semitexa\Core\Contract\RouteContractAssemblerInterface;
 use Semitexa\Core\Contract\RouteInspectionRegistryInterface;
 use Semitexa\Core\Http\RouteContract;
+use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Graphql\Attribute\ExposeAsGraphql;
 use Semitexa\Graphql\Domain\Contract\GraphqlOperationRegistryInterface;
 use InvalidArgumentException;
@@ -88,9 +89,9 @@ final class GraphqlOperationRegistry implements GraphqlOperationRegistryInterfac
                         // and no explicit rootType) is a per-operation misconfig —
                         // skip THIS exposure loudly rather than abort discovery for
                         // every other GraphQL operation in the app.
-                        error_log(sprintf(
-                            '[semitexa-graphql] Cannot derive a GraphQL rootType for %s on route "%s" '
-                            . 'from methods [%s]; declare rootType explicitly. Skipping this operation.',
+                        StaticLoggerBridge::warning('graphql', sprintf(
+                            'Cannot derive a GraphQL rootType for %s on route "%s" from methods '
+                            . '[%s]; declare rootType explicitly. Skipping this operation.',
                             $payloadClass,
                             $route->name,
                             implode(', ', $route->methods),
@@ -128,10 +129,7 @@ final class GraphqlOperationRegistry implements GraphqlOperationRegistryInterfac
                     // including bare ones). The attribute flag remains an
                     // explicit override for routes/tests without a contract.
                     list: $attribute->list || $isCollection,
-                    watchScopes: array_values(array_filter(
-                        $attribute->watchScopes,
-                        static fn (mixed $scope): bool => is_string($scope) && $scope !== '',
-                    )),
+                    watchScopes: $this->normalizeWatchScopes($attribute->watchScopes),
                     resourceType: $resourceType,
                 );
             }
@@ -225,9 +223,9 @@ final class GraphqlOperationRegistry implements GraphqlOperationRegistryInterfac
             // swallowed failure means the operation silently degrades to the Json
             // scalar instead of its Resource type. Surface it so the misconfig is
             // diagnosable rather than an invisible schema downgrade.
-            error_log(sprintf(
-                '[semitexa-graphql] RouteContract assembly failed for %s; GraphQL output '
-                . 'type falls back to the Json scalar: %s',
+            StaticLoggerBridge::warning('graphql', sprintf(
+                'RouteContract assembly failed for %s; GraphQL output type falls back to '
+                . 'the Json scalar: %s',
                 $payloadClass,
                 $e->getMessage(),
             ));
@@ -264,6 +262,31 @@ final class GraphqlOperationRegistry implements GraphqlOperationRegistryInterfac
         }
 
         return null;
+    }
+
+    /**
+     * Trim each declared watch scope and drop blanks — including whitespace-only
+     * entries, which would otherwise be stored verbatim as undebuggable
+     * invalidation-channel keys — storing the trimmed value. Non-strings are
+     * dropped.
+     *
+     * @param array<mixed> $scopes
+     * @return list<string>
+     */
+    private function normalizeWatchScopes(array $scopes): array
+    {
+        $result = [];
+        foreach ($scopes as $scope) {
+            if (!is_string($scope)) {
+                continue;
+            }
+            $trimmed = trim($scope);
+            if ($trimmed !== '') {
+                $result[] = $trimmed;
+            }
+        }
+
+        return $result;
     }
 
     private function normalizeRootType(string $rootType, ?string $payloadClass): string

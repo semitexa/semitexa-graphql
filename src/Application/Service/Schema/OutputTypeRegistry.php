@@ -11,6 +11,7 @@ use ReflectionClass;
 use ReflectionNamedType;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
+use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Core\Resource\Metadata\ResourceFieldKind;
 use Semitexa\Core\Resource\Metadata\ResourceObjectMetadata;
 
@@ -190,9 +191,9 @@ final class OutputTypeRegistry
             // ENTIRE schema, so degrade THIS field to the Json scalar (the caller
             // falls back) and surface it — rather than crash every operation.
             // Relation fields are tracked under ep-graphql-nested-resources.
-            error_log(sprintf(
-                '[semitexa-graphql] Resource %s exposes no scalar/id GraphQL fields; its '
-                . 'field falls back to the Json scalar (relation fields are deferred).',
+            StaticLoggerBridge::warning('graphql', sprintf(
+                'Resource %s exposes no scalar/id GraphQL fields; its field falls back to '
+                . 'the Json scalar (relation fields are deferred).',
                 $meta->class,
             ));
 
