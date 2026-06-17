@@ -8,6 +8,7 @@ use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 use Semitexa\Graphql\Discovery\GraphqlOperationRegistry;
+use Semitexa\Graphql\Tests\Fixture\BlankFieldQueryPayload;
 use Semitexa\Graphql\Tests\Fixture\CaseInsensitiveRootTypeFixture;
 use Semitexa\Graphql\Tests\Fixture\DuplicateFieldFixtureA;
 use Semitexa\Graphql\Tests\Fixture\DuplicateFieldFixtureB;
@@ -160,6 +161,30 @@ final class GraphqlOperationRegistryTest extends TestCase
             $registry->subscriptions()[0]->payloadClass,
             'both operations are driven by the same Payload/handler',
         );
+    }
+
+    public function test_field_name_derives_from_payload_class_when_attribute_omits_it(): void
+    {
+        $registry = $this->makeRegistry([
+            StubRouteInspectionRegistry::metadata(BlankFieldQueryPayload::class, 'blank'),
+        ]);
+
+        $ops = $registry->all();
+        self::assertCount(1, $ops);
+        // BlankFieldQueryPayload -> strip Payload + Query -> lcfirst -> blankField
+        self::assertSame('blankField', $ops[0]->field);
+        self::assertNotNull($registry->find('query', 'blankField'));
+    }
+
+    public function test_explicit_field_overrides_the_derived_name(): void
+    {
+        // QueryPayloadFixture declares field: 'foo'; derivation would yield
+        // 'queryPayloadFixture'. The explicit override must win.
+        $registry = $this->makeRegistry([
+            StubRouteInspectionRegistry::metadata(QueryPayloadFixture::class, 'q'),
+        ]);
+
+        self::assertSame('foo', $registry->all()[0]->field);
     }
 
     public function test_missing_output_class_throws(): void

@@ -6,5 +6,5 @@ namespace Semitexa\Graphql\Tests\Fixture;
 
 use Semitexa\Graphql\Attribute\ExposeAsGraphql;
 
-#[ExposeAsGraphql(field: 'foo', rootType: 'query', output: \stdClass::class, description: 'fixture query')]
+#[ExposeAsGraphql(field: 'foo', rootType: 'query', output: \stdClass::class)]
 final class QueryPayloadFixture {}

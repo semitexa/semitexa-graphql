@@ -19,14 +19,11 @@ use Semitexa\Graphql\Attribute\ExposeAsGraphql;
     field: 'runtimeFixture',
     rootType: 'query',
     output: RuntimeOutputFixture::class,
-    description: 'Runtime test fixture.',
 )]
 #[ExposeAsGraphql(
     field: 'runtimeFixtureChanges',
     rootType: 'subscription',
     output: RuntimeOutputFixture::class,
-    description: 'Runtime subscription fixture — driven by the SAME handler, '
-        . 'executed one-shot (query-style) in Phase 2.',
     watchScopes: ['runtime_things'],
 )]
 final class RuntimePayloadFixture

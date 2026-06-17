@@ -11,7 +11,6 @@ use Semitexa\Graphql\Attribute\ExposeAsGraphql;
     field: 'thingChanges',
     rootType: 'subscription',
     output: \stdClass::class,
-    description: 'fixture subscription',
     list: true,
     watchScopes: ['things', '', 0],
 )]
