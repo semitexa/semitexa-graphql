@@ -13,9 +13,12 @@ use Attribute;
  * route is a good GraphQL field. But the marker carries no TYPE information — the
  * output type is resolved from the route's contract (the same #[ResourceObject]
  * OpenAPI reads) — and `rootType` DERIVES from the HTTP method when omitted
- * (`GET`/`HEAD` → query, `POST`/`PUT`/`PATCH`/`DELETE` → mutation). Only what a
- * route cannot imply needs declaring:
- * - the field name (`field`)
+ * (`GET`/`HEAD` → query, `POST`/`PUT`/`PATCH`/`DELETE` → mutation). The field
+ * name itself DERIVES from the Payload class name when omitted (see
+ * {@see \Semitexa\Graphql\Discovery\GraphqlFieldNameDeriver}). Only what neither
+ * a route nor the class name can imply needs declaring:
+ * - `field` — ONLY as an override when the derived name would be wrong, or to
+ *   disambiguate a repeated exposure on one Payload
  * - `rootType: 'subscription'` — a live read has no HTTP-method analogue
  * - any `rootType` that intentionally diverges from the HTTP-method convention
  *
@@ -50,8 +53,15 @@ final class ExposeAsGraphql
      *        `query`/`mutation`.
      */
     public function __construct(
-        /** Public GraphQL field name, e.g. `productBySlug` or `articleChanges`. */
-        public readonly string $field,
+        /**
+         * Public GraphQL field name, e.g. `productBySlug` or `articleChanges`.
+         * OPTIONAL override: when `null`/blank, the field name DERIVES from the
+         * Payload class name (see {@see GraphqlFieldNameDeriver} — strip
+         * `Payload` + a `Query`/`Mutation`/`Subscription` token, lowerCamelCase).
+         * Declare it only when the convention would lie (e.g. a `…ByIdQueryPayload`
+         * exposed as the bare `customer`) or to disambiguate repeated exposures.
+         */
+        public readonly ?string $field = null,
         /**
          * GraphQL root type: `query` (reads), `mutation` (writes), `subscription`
          * (live reads). `null` (the default) means DERIVE from the route's HTTP
@@ -61,8 +71,6 @@ final class ExposeAsGraphql
         public readonly ?string $rootType = null,
         /** Canonical typed output contract to expose in the GraphQL schema. */
         public readonly ?string $output = null,
-        /** Optional human-readable description for generated schema/docs. */
-        public readonly string $description = '',
         /** When true, the schema field's type is wrapped as `[Output]` (a list). */
         public readonly bool $list = false,
         /** @var list<string> Resource scope(s) a subscription watches (Phase 4). */

@@ -36,16 +36,23 @@ final class WebonyxGraphqlExecutor implements GraphqlExecutorInterface
     #[InjectAsReadonly]
     protected GraphqlErrorMapper $errorMapper;
 
+    #[InjectAsReadonly]
+    protected LazyRelationResolver $lazyRelations;
+
     public function execute(
         string $query,
         ?array $variables = null,
         ?string $operationName = null,
     ): GraphqlExecutionResult {
+        // A fresh per-execution batch loader is handed to webonyx as the context
+        // value so relation fields collapse list-sibling N+1 into one
+        // resolveBatch() per resolver class per level. Its buffer never leaks
+        // across requests on a long-lived Swoole worker.
         $result = GraphQL::executeQuery(
             schema: $this->schema->getSchema(),
             source: $query,
             rootValue: null,
-            contextValue: null,
+            contextValue: new RelationBatchLoader($this->lazyRelations),
             variableValues: $variables,
             operationName: $operationName,
         );
@@ -75,8 +82,12 @@ final class WebonyxGraphqlExecutor implements GraphqlExecutorInterface
     public function setCollaboratorsForTest(
         SchemaProviderInterface $schema,
         GraphqlErrorMapper $errorMapper,
+        ?LazyRelationResolver $lazyRelations = null,
     ): void {
         $this->schema = $schema;
         $this->errorMapper = $errorMapper;
+        // Default to an empty-container loader: relation fields without a wired
+        // resolver simply resolve to null/[] (preserves pre-existing test wiring).
+        $this->lazyRelations = $lazyRelations ?? new LazyRelationResolver();
     }
 }

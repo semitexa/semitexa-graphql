@@ -100,7 +100,10 @@ final class GraphqlOperationRegistry implements GraphqlOperationRegistryInterfac
                     }
                 }
                 $outputClass = $this->normalizeOutputClass($attribute->output, $payloadClass);
-                $operationKey = $rootType . ':' . $attribute->field;
+                // `field:` is now an OPTIONAL override — derive it from the Payload
+                // class name when the attribute leaves it blank.
+                $field = $this->resolveField($attribute->field, $payloadClass);
+                $operationKey = $rootType . ':' . $field;
 
                 if (array_key_exists($operationKey, $seen)) {
                     throw new InvalidArgumentException(sprintf(
@@ -114,7 +117,7 @@ final class GraphqlOperationRegistry implements GraphqlOperationRegistryInterfac
                 $seen[$operationKey] = $payloadClass;
 
                 $operations[] = new ResolvedGraphqlOperation(
-                    field: $attribute->field,
+                    field: $field,
                     rootType: $rootType,
                     payloadClass: $payloadClass,
                     outputClass: $outputClass,
@@ -123,7 +126,10 @@ final class GraphqlOperationRegistry implements GraphqlOperationRegistryInterfac
                     httpMethods: $route->methods,
                     handlerClasses: $this->extractHandlerClasses($route->handlers),
                     responseClass: $route->responseClass,
-                    description: $attribute->description,
+                    // #[ExposeAsGraphql] no longer carries a description: the
+                    // marker is opt-in only. Schema fields surface no description
+                    // (SchemaBuilder maps '' → null).
+                    description: '',
                     // `list` derives from the route contract's reliable
                     // isCollection signal (true for any collection response,
                     // including bare ones). The attribute flag remains an
@@ -287,6 +293,20 @@ final class GraphqlOperationRegistry implements GraphqlOperationRegistryInterfac
         }
 
         return $result;
+    }
+
+    /**
+     * Resolve an operation's GraphQL field name: the attribute's `field:` when
+     * declared (override), otherwise derive it from the Payload class name. A
+     * whitespace-only override is treated as absent.
+     */
+    private function resolveField(?string $declared, string $payloadClass): string
+    {
+        if ($declared !== null && trim($declared) !== '') {
+            return trim($declared);
+        }
+
+        return GraphqlFieldNameDeriver::derive($payloadClass);
     }
 
     private function normalizeRootType(string $rootType, ?string $payloadClass): string

@@ -24,13 +24,11 @@ final class ExposeAsGraphqlTest extends TestCase
             field: 'productBySlug',
             rootType: 'query',
             output: \stdClass::class,
-            description: 'fetch a product',
         );
 
         self::assertSame('productBySlug', $attr->field);
         self::assertSame('query', $attr->rootType);
         self::assertSame(\stdClass::class, $attr->output);
-        self::assertSame('fetch a product', $attr->description);
     }
 
     public function test_attribute_defaults_root_type_to_null_for_derivation(): void
@@ -41,6 +39,5 @@ final class ExposeAsGraphqlTest extends TestCase
         // registry resolves it; the attribute itself pins nothing.
         self::assertNull($attr->rootType);
         self::assertNull($attr->output);
-        self::assertSame('', $attr->description);
     }
 }
