@@ -74,14 +74,16 @@ final class LazyRelationResolver
             return [];
         }
 
-        $resolver = $container->get($resolverClass);
-        if (!$resolver instanceof RelationResolverInterface) {
-            return [];
-        }
-
         $context = new RenderContext(RenderProfile::GraphQL, IncludeSet::empty());
 
         try {
+            // get() can throw even when has() returned true (a failing factory),
+            // so it lives inside the fail-open guard alongside resolveBatch — a
+            // lookup failure degrades this relation, never the whole response.
+            $resolver = $container->get($resolverClass);
+            if (!$resolver instanceof RelationResolverInterface) {
+                return [];
+            }
             return $resolver->resolveBatch($identities, $context);
         } catch (Throwable) {
             // A resolver failure must not collapse the whole GraphQL response;

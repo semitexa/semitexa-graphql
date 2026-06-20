@@ -166,10 +166,11 @@ final class OutputTypeRegistry
             $parentType,
             $parentIdField
         ): mixed {
-            // Eager path: the handler already embedded the relation value.
-            $eager = self::extractField($source, $fieldName);
-            if ($eager !== null) {
-                return $eager;
+            // Eager path: the handler already embedded the relation value. Probe
+            // PRESENCE (not non-null), so an explicitly-eager `null` is honored and
+            // does not fall through to the lazy resolver and override the handler.
+            if (self::hasField($source, $fieldName)) {
+                return self::extractField($source, $fieldName);
             }
 
             // Lazy path: dispatch the declared resolver for this parent.
@@ -439,13 +440,13 @@ final class OutputTypeRegistry
             }
             if ($field->kind === ResourceFieldKind::Union) {
                 foreach ($field->unionTargets ?? [] as $target) {
-                    if ($this->targetHasScalars($target)) {
+                    if ($this->targetIsTraversable($target, [])) {
                         return true;
                     }
                 }
                 continue;
             }
-            if ($this->targetHasScalars($field->target)) {
+            if ($this->targetIsTraversable($field->target, [])) {
                 return true;
             }
         }
@@ -453,15 +454,48 @@ final class OutputTypeRegistry
         return false;
     }
 
-    private function targetHasScalars(?string $target): bool
+    /**
+     * A target is traversable when it has scalar fields OR a relation that leads
+     * (transitively) to scalars — e.g. `A -> B -> C` where B has no scalars but
+     * relates to C. The earlier scalars-only check degraded such chains. `$seen`
+     * is the visited-set guarding against relation cycles.
+     *
+     * @param array<string, true> $seen
+     */
+    private function targetIsTraversable(?string $target, array $seen): bool
     {
-        if ($target === null || $target === '' || !isset($this->resources)) {
+        if ($target === null || $target === '' || !isset($this->resources) || isset($seen[$target])) {
             return false;
         }
+        $seen[$target] = true;
 
         $meta = $this->resources->get($target);
+        if ($meta === null) {
+            return false;
+        }
+        if ($this->scalarFields($meta) !== []) {
+            return true;
+        }
 
-        return $meta !== null && $this->scalarFields($meta) !== [];
+        // No scalars here — traversable only if a relation reaches scalars deeper.
+        foreach ($meta->fields as $field) {
+            if ($field->kind === ResourceFieldKind::Scalar) {
+                continue;
+            }
+            if ($field->kind === ResourceFieldKind::Union) {
+                foreach ($field->unionTargets ?? [] as $unionTarget) {
+                    if ($this->targetIsTraversable($unionTarget, $seen)) {
+                        return true;
+                    }
+                }
+                continue;
+            }
+            if ($this->targetIsTraversable($field->target, $seen)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -564,6 +598,29 @@ final class OutputTypeRegistry
     public function setLazyRelationsForTest(LazyRelationResolver $lazyRelations): void
     {
         $this->lazyRelations = $lazyRelations;
+    }
+
+    /**
+     * Whether $source carries $fieldName AT ALL (present even when its value is
+     * null). Distinguishes an explicitly-eager null from an absent field so the
+     * eager-over-lazy precedence holds. Mirrors {@see extractField}'s source shapes.
+     */
+    private static function hasField(mixed $source, string $fieldName): bool
+    {
+        if (is_array($source)) {
+            return array_key_exists($fieldName, $source);
+        }
+        if (is_object($source)) {
+            if (property_exists($source, $fieldName)) {
+                return true;
+            }
+            $getter = 'get' . ucfirst($fieldName);
+            $is = 'is' . ucfirst($fieldName);
+
+            return method_exists($source, $getter) || method_exists($source, $is);
+        }
+
+        return false;
     }
 
     private static function extractField(mixed $source, string $fieldName): mixed
