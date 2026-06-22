@@ -75,5 +75,12 @@ final class ExposeAsGraphql
         public readonly bool $list = false,
         /** @var list<string> Resource scope(s) a subscription watches (Phase 4). */
         public readonly array $watchScopes = [],
+        /**
+         * OPTIONAL human-readable description surfaced on the generated schema
+         * field (webonyx `description`). Blank/`null` leaves the field without a
+         * description. The field name and output type still DERIVE from the route
+         * — this only annotates; it never drives discovery.
+         */
+        public readonly ?string $description = null,
     ) {}
 }

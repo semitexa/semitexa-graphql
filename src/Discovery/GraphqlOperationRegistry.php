@@ -126,10 +126,10 @@ final class GraphqlOperationRegistry implements GraphqlOperationRegistryInterfac
                     httpMethods: $route->methods,
                     handlerClasses: $this->extractHandlerClasses($route->handlers),
                     responseClass: $route->responseClass,
-                    // #[ExposeAsGraphql] no longer carries a description: the
-                    // marker is opt-in only. Schema fields surface no description
-                    // (SchemaBuilder maps '' → null).
-                    description: '',
+                    // Optional schema-field description from the marker; blank
+                    // when not declared (SchemaBuilder maps '' → null, so the
+                    // field simply carries no description).
+                    description: $attribute->description ?? '',
                     // `list` derives from the route contract's reliable
                     // isCollection signal (true for any collection response,
                     // including bare ones). The attribute flag remains an
