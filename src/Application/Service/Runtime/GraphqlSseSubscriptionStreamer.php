@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Semitexa\Graphql\Application\Service\Runtime;
 
 use Semitexa\Core\Attribute\AsService;
+use Semitexa\Core\Auth\GuestAuthContext;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Auth\AuthContextInterface;
 use Semitexa\Core\Discovery\AttributeDiscovery;
@@ -171,8 +172,8 @@ final class GraphqlSseSubscriptionStreamer
      * as guest (fail-closed for `authenticated-only`, irrelevant for the other
      * two modes).
      */
-    #[InjectAsReadonly]
-    protected ?AuthContextInterface $authContext = null;
+    #[InjectAsReadonly(optional: true)]
+    protected AuthContextInterface $authContext;
 
     /**
      * Attempt to serve the request as a held-open GraphQL subscription stream.
@@ -300,7 +301,13 @@ final class GraphqlSseSubscriptionStreamer
      */
     private function isAuthenticated(): bool
     {
-        return $this->authContext !== null && !$this->authContext->isGuest();
+        return !$this->authContext()->isGuest();
+    }
+
+    /** Soft dependency: no auth binding ⇒ everyone is a guest (fail-closed). */
+    private function authContext(): AuthContextInterface
+    {
+        return $this->authContext ??= GuestAuthContext::getInstance();
     }
 
     /**
