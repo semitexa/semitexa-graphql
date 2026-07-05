@@ -12,6 +12,7 @@ use Semitexa\Graphql\Domain\Contract\GraphqlExecutorInterface;
 use Semitexa\Graphql\Domain\Contract\SchemaProviderInterface;
 use Semitexa\Graphql\Pipeline\GraphqlErrorMapper;
 use Semitexa\Graphql\Domain\Model\GraphqlExecutionResult;
+use Semitexa\Graphql\Domain\Model\GraphqlValidationLimits;
 
 /**
  * webonyx-backed implementation of `GraphqlExecutorInterface`.
@@ -55,6 +56,11 @@ final class WebonyxGraphqlExecutor implements GraphqlExecutorInterface
             contextValue: new RelationBatchLoader($this->lazyRelations),
             variableValues: $variables,
             operationName: $operationName,
+            // Depth + complexity caps (and, in prod, introspection off) reject
+            // an abusive query BEFORE any resolver/DB work — without them a
+            // single unauthenticated POST can fan a nested relation-cycle query
+            // into a worker-stalling avalanche.
+            validationRules: GraphqlValidationLimits::fromEnvironment()->validationRules(),
         );
 
         // Strip stack traces; the error mapper produces our own envelope.
