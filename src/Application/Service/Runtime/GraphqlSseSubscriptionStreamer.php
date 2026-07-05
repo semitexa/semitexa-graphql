@@ -518,13 +518,42 @@ final class GraphqlSseSubscriptionStreamer
             $blob = $tenant->forSerialization();
         }
 
+        return $this->encodeTenantBlob(is_array($blob) ? $blob : []);
+    }
+
+    /**
+     * Serialize the tenant context, or FAIL CLOSED. An empty `[]` (no tenant
+     * bound) encodes to `{}` and never throws — the legitimate non-tenancy
+     * path. But if a tenant IS bound and its context cannot be serialized
+     * (e.g. malformed UTF-8), returning an empty blob would let the cross-worker
+     * re-establishment resume the subscription with NO tenant context — a
+     * cross-tenant scoping failure. The old code swallowed the JsonException to
+     * `'{}'` silently; instead we log and refuse to build a subscription that
+     * would resume unscoped.
+     *
+     * @param array<int|string, mixed> $blob
+     */
+    private function encodeTenantBlob(array $blob): string
+    {
         try {
             return json_encode(
-                is_array($blob) ? $blob : [],
+                $blob,
                 JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR,
             );
-        } catch (\JsonException) {
-            return '{}';
+        } catch (\JsonException $e) {
+            StaticLoggerBridge::error('graphql', sprintf(
+                'GraphQL SSE could not serialize the tenant context (tenant %s) for '
+                . 'cross-worker re-establishment: %s. Refusing the subscription rather '
+                . 'than resuming it without tenant scoping.',
+                $this->currentTenantId(),
+                $e->getMessage(),
+            ));
+
+            throw new \RuntimeException(
+                'GraphQL SSE tenant context could not be serialized; subscription refused to prevent a cross-tenant resume.',
+                0,
+                $e,
+            );
         }
     }
 
