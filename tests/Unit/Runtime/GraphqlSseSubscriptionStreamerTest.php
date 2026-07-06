@@ -195,6 +195,41 @@ final class GraphqlSseSubscriptionStreamerTest extends TestCase
         self::assertSame([], $this->invokeResolveWatchScopes($streamer, $payload));
     }
 
+    // ---- tenant-blob serialization: fail closed, never resume unscoped ------
+
+    public function test_tenant_blob_encodes_a_normal_context(): void
+    {
+        self::assertSame(
+            '{"tenant_id":"acme","region":"eu"}',
+            $this->invokeEncodeTenantBlob(new GraphqlSseSubscriptionStreamer(), ['tenant_id' => 'acme', 'region' => 'eu']),
+        );
+    }
+
+    public function test_no_tenant_bound_encodes_to_empty_blob_without_throwing(): void
+    {
+        // The legitimate non-tenancy path: an empty context serializes to an
+        // empty blob (`[]`, PHP's encoding of an empty array) and never throws.
+        self::assertSame('[]', $this->invokeEncodeTenantBlob(new GraphqlSseSubscriptionStreamer(), []));
+    }
+
+    public function test_unserializable_tenant_context_fails_closed_instead_of_empty_blob(): void
+    {
+        // A bound tenant whose context can't be serialized (malformed UTF-8)
+        // must NOT degrade to an empty blob — that would resume the subscription
+        // with no tenant scoping on another worker. It must throw.
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('cross-tenant resume');
+        $this->invokeEncodeTenantBlob(new GraphqlSseSubscriptionStreamer(), ['tenant_id' => "acme\xB1\x31"]);
+    }
+
+    /** @param array<int|string, mixed> $blob */
+    private function invokeEncodeTenantBlob(GraphqlSseSubscriptionStreamer $streamer, array $blob): string
+    {
+        $method = new ReflectionMethod($streamer, 'encodeTenantBlob');
+        $method->setAccessible(true);
+        return (string) $method->invoke($streamer, $blob);
+    }
+
     private function beginReRunScope(): void
     {
         $m = new ReflectionMethod(AsyncResourceSseServer::class, 'beginReRunScope');
