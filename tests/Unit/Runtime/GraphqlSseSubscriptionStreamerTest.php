@@ -19,6 +19,7 @@ use Semitexa\Graphql\Domain\Contract\GraphqlOperationRegistryInterface;
 use Semitexa\Graphql\Domain\Model\GraphqlExecutionResult;
 use Semitexa\Graphql\Domain\Model\GraphqlSseMode;
 use Semitexa\Ssr\Application\Service\Async\AsyncResourceSseServer;
+use Semitexa\Ssr\Application\Service\Async\SseServer;
 
 /**
  * Unit coverage for the PHASE 2 initial-frame builder and the PHASE 3
@@ -232,16 +233,16 @@ final class GraphqlSseSubscriptionStreamerTest extends TestCase
 
     private function beginReRunScope(): void
     {
-        $m = new ReflectionMethod(AsyncResourceSseServer::class, 'beginReRunScope');
+        $m = new ReflectionMethod(SseServer::class, 'beginReRunScope');
         $m->setAccessible(true);
-        $m->invoke(null);
+        $m->invoke(AsyncResourceSseServer::instance());
     }
 
     private function endReRunScope(): void
     {
-        $m = new ReflectionMethod(AsyncResourceSseServer::class, 'endReRunScope');
+        $m = new ReflectionMethod(SseServer::class, 'endReRunScope');
         $m->setAccessible(true);
-        $m->invoke(null);
+        $m->invoke(AsyncResourceSseServer::instance());
     }
 
     /** @param array<string, list<string>> $subscriptionScopesByField */
