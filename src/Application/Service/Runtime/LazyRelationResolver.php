@@ -6,7 +6,7 @@ namespace Semitexa\Graphql\Application\Service\Runtime;
 
 use Psr\Container\ContainerInterface;
 use Semitexa\Core\Attribute\AsService;
-use Semitexa\Core\Container\ContainerFactory;
+use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Resource\IncludeSet;
 use Semitexa\Core\Resource\RelationResolverInterface;
 use Semitexa\Core\Resource\RenderContext;
@@ -92,21 +92,30 @@ final class LazyRelationResolver
         }
     }
 
-    /** @internal Test seam: bypass ContainerFactory in unit tests. */
+    /** @internal Test seam: bypass the injected container in unit tests. */
     public function setContainerForTest(?ContainerInterface $container): void
     {
         $this->containerOverride = $container;
     }
+
+    /**
+     * Injected rather than reached for statically. It is still read lazily and
+     * may legitimately be absent: this resolver also runs outside a built
+     * container.
+     */
+    #[InjectAsReadonly]
+    protected ContainerInterface $container;
 
     private function container(): ?ContainerInterface
     {
         if ($this->containerOverride !== null) {
             return $this->containerOverride;
         }
-        try {
-            return ContainerFactory::get();
-        } catch (Throwable) {
-            return null;
-        }
+        // isset(), not ??: an injected typed property that was never filled is
+        // UNINITIALIZED, and reading it throws rather than yielding null. That
+        // is the state this class is in when it is built outside the container
+        // (early boot, a plain `new` in a test), which is the case the null
+        // return exists for.
+        return isset($this->container) ? $this->container : null;
     }
 }
