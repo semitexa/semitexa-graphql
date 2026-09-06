@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Graphql\Application\Service\Runtime;
 
+use Semitexa\Core\Exception\AccessDeniedException;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Auth\GuestAuthContext;
 use Semitexa\Core\Attribute\InjectAsReadonly;
@@ -200,6 +201,40 @@ final class GraphqlSseSubscriptionStreamer
             if (!$this->operationType->isSubscription($payload->getQuery(), $payload->getOperationName())) {
                 return null;
             }
+
+            // The kill switch has to reach streams that are already running.
+            // The admission gate below sits AFTER this branch, so without this
+            // recheck flipping SEMITEXA_GRAPHQL_SSE_MODE to `disabled` stopped
+            // new streams and left every admitted one executing its document on
+            // every invalidation tick, indefinitely — an operator turning the
+            // feature off with no second lever to pull.
+            //
+            // Scoped to `disabled` — the operator lever about the FEATURE — and
+            // deliberately NOT the full admission predicate. Subject-level
+            // authorization on a tick belongs to the pre-hydration auth gate,
+            // which already terminates through this same mechanism; adding a
+            // second check here means trusting isAuthenticated() inside a re-run,
+            // and the existing tick test shows it reading `guest` there. A false
+            // positive would close every authenticated-only stream on its first
+            // tick, which is worse than the gap it would close. Narrowing
+            // `everyone` to `authenticated-only` therefore still only stops NEW
+            // admissions; that gap is recorded rather than guessed at.
+            //
+            // Terminate, not drain. A subscription has no natural end, so
+            // "let existing streams finish" means "never stop".
+            // AccessDeniedException is what RouteExecutor::reExecute() converts
+            // into ReRunResult::terminate(), closing the stream with a reason
+            // rather than going quiet — a client holding a dead-but-open stream
+            // is worse off than one that was closed.
+            $mode = $this->resolveMode();
+            if ($mode === GraphqlSseMode::Disabled) {
+                throw new AccessDeniedException(sprintf(
+                    'GraphQL SSE subscriptions are no longer admitted (%s=%s); terminating this stream.',
+                    GraphqlSseMode::ENV_KEY,
+                    $mode->value,
+                ));
+            }
+
             $resource->setRenderContext($this->nextFrame($payload));
 
             return $resource;
@@ -256,7 +291,11 @@ final class GraphqlSseSubscriptionStreamer
             $swooleRequest,
             $swooleResponse,
             $streamId,
-            $this->nextFrame($payload),
+            // Lazy: executing the subscription document IS the frame, and the
+            // per-IP / global SSE caps are enforced inside the serve. Passed
+            // eagerly, every over-cap attempt paid for a full execution and was
+            // then answered 429.
+            fn (): array => $this->nextFrame($payload),
             $record,
             $reRunContext,
             $streamId,

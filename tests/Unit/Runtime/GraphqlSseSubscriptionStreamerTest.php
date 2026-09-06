@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Graphql\Tests\Unit\Runtime;
 
+use Semitexa\Core\Exception\AccessDeniedException;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use ReflectionProperty;
@@ -142,6 +143,78 @@ final class GraphqlSseSubscriptionStreamerTest extends TestCase
         // (already-sent would mean the socket was grabbed: forbidden on a tick).
         self::assertFalse($served->isAlreadySent());
         self::assertSame(200, $served->getStatusCode());
+    }
+
+    /**
+     * The kill switch has to reach streams that are already running.
+     *
+     * The admission gate sits after the re-run branch, so flipping
+     * SEMITEXA_GRAPHQL_SSE_MODE to `disabled` stopped NEW streams and left every
+     * admitted one executing its document on every invalidation tick, forever.
+     * An operator turning a feature off and watching it keep serving has no
+     * second lever to pull.
+     *
+     * Terminate, not drain: a subscription has no natural end, so "let existing
+     * streams finish" means "never stop". AccessDeniedException is what
+     * RouteExecutor::reExecute() converts into ReRunResult::terminate(), which
+     * closes the stream with a reason instead of silently going quiet — a client
+     * left holding a dead-but-open stream is worse than a closed one.
+     */
+    public function test_rerun_tick_terminates_when_the_mode_has_since_been_disabled(): void
+    {
+        $streamer = $this->streamerWithExecutor(new GraphqlExecutionResult(
+            data: ['articleChanges' => [['id' => 'a1']]],
+            errors: [],
+        ));
+        (new ReflectionProperty($streamer, 'operationType'))->setValue($streamer, new GraphqlOperationTypeResolver());
+
+        $previous = getenv(GraphqlSseMode::ENV_KEY);
+        putenv(GraphqlSseMode::ENV_KEY . '=' . GraphqlSseMode::Disabled->value);
+
+        $this->beginReRunScope();
+        try {
+            $streamer->tryServe($this->subscriptionPayload(), new GraphqlEndpointResource());
+            self::fail('a disabled mode must terminate the stream, not keep feeding it');
+        } catch (AccessDeniedException $e) {
+            self::assertStringContainsString(GraphqlSseMode::ENV_KEY, $e->getMessage());
+        } finally {
+            $this->endReRunScope();
+            $previous === false
+                ? putenv(GraphqlSseMode::ENV_KEY)
+                : putenv(GraphqlSseMode::ENV_KEY . '=' . $previous);
+        }
+    }
+
+    /**
+     * And a mode that is merely narrowed must not disturb a running stream.
+     * The recheck is scoped to `disabled` on purpose: subject-level
+     * authorization on a tick is the auth gate's job, and a second check here
+     * would have to trust isAuthenticated() inside a re-run — where it reads
+     * `guest` — closing every authenticated-only stream on its first tick.
+     */
+    public function test_rerun_tick_still_emits_while_the_mode_admits(): void
+    {
+        $streamer = $this->streamerWithExecutor(new GraphqlExecutionResult(
+            data: ['articleChanges' => [['id' => 'a1']]],
+            errors: [],
+        ));
+        (new ReflectionProperty($streamer, 'operationType'))->setValue($streamer, new GraphqlOperationTypeResolver());
+
+        $previous = getenv(GraphqlSseMode::ENV_KEY);
+        putenv(GraphqlSseMode::ENV_KEY . '=' . GraphqlSseMode::AuthenticatedOnly->value);
+
+        $this->beginReRunScope();
+        try {
+            $served = $streamer->tryServe($this->subscriptionPayload(), new GraphqlEndpointResource());
+        } finally {
+            $this->endReRunScope();
+            $previous === false
+                ? putenv(GraphqlSseMode::ENV_KEY)
+                : putenv(GraphqlSseMode::ENV_KEY . '=' . $previous);
+        }
+
+        self::assertNotNull($served);
+        self::assertSame(['articleChanges' => [['id' => 'a1']]], $served->getRenderContext()['data']);
     }
 
     public function test_rerun_tick_with_non_subscription_document_falls_through_to_one_shot(): void
