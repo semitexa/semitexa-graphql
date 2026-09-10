@@ -34,6 +34,14 @@ use Semitexa\Graphql\Tests\Support\StubRouteInspectionRegistry;
  * constructor-initialized property, the assertion catches it before the
  * live request does.
  */
+/**
+ * Deliberately hand-rolls newInstanceWithoutConstructor().
+ *
+ * Everywhere else in the repository that pattern moved to
+ * {@see \Semitexa\Testing\Traits\BuildsContainerManagedObjects}. Not here: the
+ * constructor bypass is the SUBJECT of these tests, not a means of setting them
+ * up, and building through the helper would hide the mechanism being asserted.
+ */
 final class SchemaBuilderConstructorlessBootTest extends TestCase
 {
     public function test_schema_builds_when_constructor_is_bypassed(): void
