@@ -133,7 +133,13 @@ final readonly class GraphqlExecutionResult
         }
 
         foreach ($value as $index => $item) {
-            if (!is_array($item)) {
+            // The list test is the same one map() applies, and for the same
+            // reason: `[['id']]` is an array, so a bare is_array() would let a
+            // nested LIST through as an object and hand the caller something it
+            // cannot read keys out of. An empty array is allowed — it is the
+            // one value that is both shapes, and an object with no fields
+            // selected is a real answer.
+            if (!is_array($item) || array_is_list($item) && $item !== []) {
                 throw UnexpectedGraphqlResultException::wrongType($path . '.' . $index, 'an object', $item);
             }
         }
@@ -162,11 +168,33 @@ final readonly class GraphqlExecutionResult
         return $extensions['code'];
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * One error entry.
+     *
+     * `??` cannot be used to pick it: a present `errors[0] => null` is not the
+     * same fact as no error at index 0, and reporting the first as the second
+     * sends the reader looking for a query that never ran. The entry is also
+     * checked rather than trusted — `errors` is a decoded response, its element
+     * type is a docblock and not an enforced one, and a server answering
+     * `errors: ["boom"]` would otherwise return a string through an `array`
+     * return type and fail as a TypeError in the caller.
+     *
+     * @return array<string, mixed>
+     */
     public function error(int $index = 0): array
     {
-        return $this->errors[$index]
-            ?? throw UnexpectedGraphqlResultException::noErrorAt($index, count($this->errors));
+        if (!array_key_exists($index, $this->errors)) {
+            throw UnexpectedGraphqlResultException::noErrorAt($index, count($this->errors));
+        }
+
+        $error = $this->errors[$index];
+
+        if (!is_array($error) || array_is_list($error) && $error !== []) {
+            throw UnexpectedGraphqlResultException::wrongType('errors.' . $index, 'an object', $error);
+        }
+
+        /** @var array<string, mixed> $error */
+        return $error;
     }
 
     /**

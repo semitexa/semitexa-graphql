@@ -115,6 +115,22 @@ final class GraphqlExecutionResultReadingTest extends TestCase
         $r->list('tags');
     }
 
+    /**
+     * A nested list is an array too, and a bare is_array() member check would
+     * let it past as an object — handing the caller a value it cannot read
+     * keys out of, which is the failure this class exists to replace.
+     */
+    #[Test]
+    public function a_list_of_lists_is_refused_by_member(): void
+    {
+        $r = new GraphqlExecutionResult(data: ['rows' => [['id']]], errors: []);
+
+        $this->expectException(UnexpectedGraphqlResultException::class);
+        $this->expectExceptionMessage('GraphQL result at "rows.0" must be an object, got a list of 1.');
+
+        $r->list('rows');
+    }
+
     /** An empty list is a list, and reading it must not be an error. */
     #[Test]
     public function an_empty_collection_reads_as_an_empty_list(): void
@@ -162,6 +178,40 @@ final class GraphqlExecutionResultReadingTest extends TestCase
         $this->expectExceptionMessage('no error at index 2 (0 error(s) present)');
 
         $this->fixture()->errorCode(2);
+    }
+
+    /**
+     * A present null is not the same fact as a missing index.
+     *
+     * `errors[0] => null` means the server sent an entry and it is empty;
+     * "no error at index 0" would send the reader looking for a query that
+     * never ran. `??` cannot tell the two apart, which is why it is not used.
+     */
+    #[Test]
+    public function an_error_entry_that_is_present_and_null_is_not_reported_as_absent(): void
+    {
+        $r = new GraphqlExecutionResult(data: null, errors: [null]);
+
+        $this->expectException(UnexpectedGraphqlResultException::class);
+        $this->expectExceptionMessage('GraphQL result at "errors.0" must be an object, got null.');
+
+        $r->error();
+    }
+
+    /**
+     * `errors` is a decoded response, so its element type is a docblock and not
+     * an enforced one. A server answering `errors: ["boom"]` must fail here,
+     * naming the entry — not as a TypeError on an `array` return type.
+     */
+    #[Test]
+    public function an_error_entry_that_is_not_an_object_is_refused(): void
+    {
+        $r = new GraphqlExecutionResult(data: null, errors: ['boom']);
+
+        $this->expectException(UnexpectedGraphqlResultException::class);
+        $this->expectExceptionMessage('GraphQL result at "errors.0" must be an object, got string.');
+
+        $r->error();
     }
 
     /** An error without our envelope is a mapper defect, and says so as a type error. */

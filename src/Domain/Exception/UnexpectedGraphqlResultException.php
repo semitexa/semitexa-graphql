@@ -23,7 +23,7 @@ final class UnexpectedGraphqlResultException extends \InvalidArgumentException
     {
         return new self(sprintf(
             'Cannot read "%s": the result carries no data. Execution failed before a value '
-            . 'existed — read errors() to find out why.',
+            . 'existed — read error() to find out why.',
             $path,
         ));
     }
