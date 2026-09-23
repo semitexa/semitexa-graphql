@@ -17,7 +17,6 @@ use Semitexa\Graphql\Application\Service\Schema\PayloadArgumentBuilder;
 use Semitexa\Graphql\Application\Service\Schema\ScalarTypeMapper;
 use Semitexa\Graphql\Application\Service\Schema\SchemaBuilder;
 use Semitexa\Graphql\Tests\Fixture\Runtime\RuntimeHandlerFixture;
-use Semitexa\Graphql\Tests\Fixture\Runtime\RuntimeOutputFixture;
 use Semitexa\Graphql\Tests\Fixture\Runtime\RuntimePayloadFixture;
 use Semitexa\Graphql\Tests\Fixture\Runtime\RuntimeResourceFixture;
 use Semitexa\Graphql\Tests\Support\StubRouteInspectionRegistry;
