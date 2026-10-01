@@ -6,6 +6,7 @@ namespace Semitexa\Graphql\Application\Service\Runtime;
 
 use Semitexa\Core\Attribute\SatisfiesServiceContract;
 use Semitexa\Core\Http\Response\ResourceResponse;
+use Semitexa\Graphql\Domain\Contract\GraphqlProjectionInterface;
 use Semitexa\Graphql\Domain\Contract\ResourceSerializerInterface;
 
 /**
@@ -17,6 +18,10 @@ use Semitexa\Graphql\Domain\Contract\ResourceSerializerInterface;
  * with a single rule: prefer the `data` key when present (matches the JSON
  * resources in the demo), otherwise return the whole render-context array.
  *
+ * A Resource implementing {@see GraphqlProjectionInterface} states its value
+ * itself and is asked first: it writes its HTTP body directly, so its render
+ * context is empty by design.
+ *
  * Resources that aren't `ResourceResponse` (e.g. plain DTOs returned by some
  * future handler refactor) are passed through untouched. Webonyx then walks
  * the value against the field's declared output type using the field
@@ -27,6 +32,10 @@ final class RenderContextResourceSerializer implements ResourceSerializerInterfa
 {
     public function serialize(object $resource): mixed
     {
+        if ($resource instanceof GraphqlProjectionInterface) {
+            return $resource->toGraphqlValue();
+        }
+
         if (!$resource instanceof ResourceResponse) {
             return $resource;
         }
