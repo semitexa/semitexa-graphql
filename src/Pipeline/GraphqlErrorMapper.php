@@ -8,6 +8,7 @@ use GraphQL\Error\Error;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Exception\AccessDeniedException;
 use Semitexa\Core\Exception\AuthenticationException;
+use Semitexa\Core\Exception\DomainException;
 use Semitexa\Core\Exception\NotFoundException;
 use Semitexa\Core\Exception\RateLimitException;
 use Semitexa\Core\Exception\ValidationException;
@@ -90,6 +91,16 @@ final class GraphqlErrorMapper
             $e instanceof RateLimitException => [
                 'message' => $e->getMessage(),
                 'extensions' => ['code' => 'RATE_LIMITED', 'http_status' => 429],
+            ],
+            // Any other domain exception already says what it is: the HTTP
+            // ExceptionMapper answers it with its own status and error code,
+            // and GraphQL must not turn the same "not found" into a 500.
+            $e instanceof DomainException && $e->getStatusCode()->value < 500 => [
+                'message' => $e->getMessage(),
+                'extensions' => [
+                    'code' => strtoupper($e->getErrorCode()),
+                    'http_status' => $e->getStatusCode()->value,
+                ],
             ],
             default => [
                 'message' => 'Internal server error.',

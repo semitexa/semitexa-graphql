@@ -9,8 +9,10 @@ use GraphQL\Error\SyntaxError;
 use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Exception\AccessDeniedException;
 use Semitexa\Core\Exception\AuthenticationException;
+use Semitexa\Core\Exception\DomainException;
 use Semitexa\Core\Exception\NotFoundException;
 use Semitexa\Core\Exception\ValidationException;
+use Semitexa\Core\Http\HttpStatus;
 use Semitexa\Graphql\Pipeline\GraphqlErrorMapper;
 
 final class GraphqlErrorMapperTest extends TestCase
@@ -82,5 +84,41 @@ final class GraphqlErrorMapperTest extends TestCase
 
         self::assertSame('GRAPHQL_VALIDATION', $shape['extensions']['code']);
         self::assertNotEmpty($shape['message']);
+    }
+
+    public function test_maps_an_application_domain_exception_by_its_own_status(): void
+    {
+        $notFound = new class ('Demo API product #x not found.') extends DomainException {
+            public function getStatusCode(): HttpStatus
+            {
+                return HttpStatus::NotFound;
+            }
+
+            public function getErrorCode(): string
+            {
+                return 'not_found';
+            }
+        };
+
+        $shape = (new GraphqlErrorMapper())->mapError(new Error('wrap', previous: $notFound));
+
+        self::assertSame('NOT_FOUND', $shape['extensions']['code']);
+        self::assertSame(404, $shape['extensions']['http_status']);
+        self::assertSame('Demo API product #x not found.', $shape['message']);
+    }
+
+    public function test_a_server_side_domain_exception_keeps_its_message_private(): void
+    {
+        $unavailable = new class ('db host 10.0.0.5 refused') extends DomainException {
+            public function getStatusCode(): HttpStatus
+            {
+                return HttpStatus::ServiceUnavailable;
+            }
+        };
+
+        $shape = (new GraphqlErrorMapper())->mapError(new Error('wrap', previous: $unavailable));
+
+        self::assertSame('INTERNAL_SERVER_ERROR', $shape['extensions']['code']);
+        self::assertSame('Internal server error.', $shape['message']);
     }
 }
