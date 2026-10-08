@@ -2,6 +2,15 @@
 
 A real, executable GraphQL runtime for Semitexa applications. Built on the same `Payload DTO → Handler → Resource` architecture as the rest of the framework. Powered by [`webonyx/graphql-php`](https://github.com/webonyx/graphql-php) under the hood, kept behind Semitexa-owned contracts so webonyx types do not leak across the codebase.
 
+## Install
+
+Not included by the installer. Add it to an existing project from the project root:
+
+```bash
+docker compose run --rm --no-deps --user "$(id -u):$(id -g)" app composer require semitexa/graphql
+bin/semitexa server:restart
+```
+
 ## What this package provides
 
 - `#[ExposeAsGraphql]` attribute — opt a Semitexa Payload DTO into the GraphQL schema.
@@ -10,18 +19,16 @@ A real, executable GraphQL runtime for Semitexa applications. Built on the same 
 - A runtime executor that parses, validates, and runs GraphQL queries through the existing Semitexa pipeline (`GraphqlExecutorInterface`).
 - A predictable error envelope mapped from Semitexa domain exceptions (`GraphqlErrorMapper`).
 - A framework-agnostic `GraphqlExecutionResult` DTO that any HTTP transport can serialize.
-- The reusable `POST /graphql` HTTP route — `GraphqlEndpointPayload` (under `Semitexa\Graphql\Application\Payload\Request\`), `GraphqlEndpointHandler` (under `Semitexa\Graphql\Application\Handler\PayloadHandler\`) and `GraphqlEndpointResource` (under `Semitexa\Graphql\Application\Resource\Response\`) — declared with `#[AsPayload]` so it is auto-discovered as soon as the package is installed. No per-application wiring required. The route path is configurable per deployment through `.env` (see [Configuring the route path](#configuring-the-route-path)) without forking package code.
+- The reusable `POST /graphql` HTTP route — `GraphqlEndpointPayload` (under `Semitexa\Graphql\Application\Payload\Request\`), `GraphqlEndpointHandler` (under `Semitexa\Graphql\Application\Handler\PayloadHandler\`) and `GraphqlEndpointResource` (under `Semitexa\Graphql\Application\Resource\Response\`) — declared with `#[AsPublicPayload]` so it is auto-discovered as soon as the package is installed. No per-application wiring required. The route path is configurable per deployment through `.env` (see [Configuring the route path](#configuring-the-route-path)) without forking package code.
 
-Application modules (e.g. a demo under `src/modules/`) only need to declare their domain operations with `#[AsPayload] + #[ExposeAsGraphql]`. The interactive runner page, demo handlers, and any application-specific schema authoring stay in the application — the package owns transport and runtime, the application owns the schema content. Playground does not own the GraphQL HTTP route.
-
-The interactive demo at `GET /playground/graphql` (lives in Playground, not here) walks a developer through four real surfaces: the package's POST /graphql runner, the Resource DTO multi-profile route at `/playground/customers/{id}` (JSON / JSON-LD / GraphQL response), `?include=` lazy relation expansion, and the `?query=` selection-set bridge. All four sections fire real HTTP — none are mocked.
+Application modules (e.g. a demo under `src/modules/`) only need to declare their domain operations with a payload attribute (`#[AsPublicPayload]`, or `#[AsProtectedPayload]` from semitexa/authorization) plus `#[ExposeAsGraphql]`. Demo handlers and any application-specific schema authoring stay in the application — the package owns transport and runtime, the application owns the schema content.
 
 ## Configuring the route path
 
-The default route is `POST /graphql`. The `path` argument on `GraphqlEndpointPayload`'s `#[AsPayload]` uses Semitexa's standard env-driven attribute-value syntax:
+The default route is `POST /graphql`. The `path` argument on `GraphqlEndpointPayload`'s `#[AsPublicPayload]` uses Semitexa's standard env-driven attribute-value syntax:
 
 ```php
-#[AsPayload(
+#[AsPublicPayload(
     path: 'env::SEMITEXA_GRAPHQL_ROUTE_PATH::/graphql',
     methods: ['POST'],
     name: 'graphql.endpoint',
@@ -29,7 +36,7 @@ The default route is `POST /graphql`. The `path` argument on `GraphqlEndpointPay
 )]
 ```
 
-This is the same `env::VAR::default` format the framework already uses for any `#[AsPayload]` route — `EnvValueResolver` substitutes the value during route discovery, and falls back to the inline default when the variable is unset. See `packages/semitexa-core/docs/PAYLOAD_ENV_ROUTE_OVERRIDES.md` for the framework-wide reference.
+This is the same `env::VAR::default` format the framework already uses for any payload route — `EnvValueResolver` substitutes the value during route discovery, and falls back to the inline default when the variable is unset. See https://semitexa.com/docs/routing/env-route-override for the framework-wide reference.
 
 To customise the public route in a deployment, set `SEMITEXA_GRAPHQL_ROUTE_PATH` in `.env` (or in the process environment). Common values:
 
@@ -56,10 +63,10 @@ Business logic stays in Handlers. The GraphQL layer is a transport.
 
 ## Exposing a Semitexa operation as GraphQL
 
-Add `#[ExposeAsGraphql]` to any Payload DTO that already has `#[AsPayload]`:
+Add `#[ExposeAsGraphql]` to any Payload DTO that already has a payload attribute such as `#[AsPublicPayload]`:
 
 ```php
-#[AsPayload(
+#[AsPublicPayload(
     path: '/graphql-demo/articles',
     methods: ['GET'],
     name: 'graphql.demo.articles.list',
@@ -81,11 +88,14 @@ That's all that's required. Discovery picks it up at boot, the schema builder pr
 
 | Argument      | Type     | Default     | Meaning |
 |---------------|----------|-------------|---------|
-| `field`       | string   | required    | GraphQL field name (e.g. `articles`, `createArticle`). |
-| `rootType`    | string   | `'query'`   | `'query'` or `'mutation'`. |
+| `field`       | ?string  | `null`      | GraphQL field name (e.g. `articles`, `createArticle`). When `null`, derived from the Payload class name. |
+| `rootType`    | ?string  | `null`      | `'query'`, `'mutation'` or `'subscription'`. When `null`, derived from the HTTP method (`GET`/`HEAD` → query, otherwise mutation); `subscription` must be declared. |
 | `output`      | ?string  | `null`      | FQCN of the typed output DTO (e.g. `Article::class`). When `null`, the field's output type is the catch-all `Json` scalar. |
-| `description` | string   | `''`        | Schema description (surfaces in introspection). |
 | `list`        | bool     | `false`     | When `true`, the schema field type is wrapped as `[Output]`. |
+| `watchScopes` | list     | `[]`        | Resource scopes a `subscription` watches; ignored for query/mutation. |
+| `description` | ?string  | `null`      | Schema description (surfaces in introspection). |
+
+The attribute is repeatable: one Payload can be exposed as several operations (e.g. a `query` and a `subscription`).
 
 ## Argument mapping
 
@@ -94,7 +104,7 @@ Each `public function setX(<scalar>): void` setter on the Payload becomes one Gr
 - `string`, `int`, `float`, `bool` → `String`, `Int`, `Float`, `Boolean`.
 - Setters named `setId` / `setSlug` / `setUuid` are exposed as `ID!` (non-null `ID`).
 - Other arguments default to nullable so Payloads only need to set the fields the client actually supplied.
-- Setters with non-scalar parameters are skipped — input objects / nested arguments are tracked under `ep-graphql-nested-resources`.
+- Setters with non-scalar parameters are skipped — input objects / nested arguments are not supported.
 
 ## Output mapping
 
@@ -102,16 +112,16 @@ For each `output:` class:
 
 - Each `public readonly` scalar property becomes a GraphQL field of the same name.
 - `string`, `int`, `float`, `bool`, `?T` → standard scalars; nullable types stay nullable.
-- Nested objects, lists of objects, embedded resources are not modeled in this iteration — see `ep-graphql-nested-resources`.
+- Relation fields of a `#[ResourceObject]` output (`#[ResourceRef]`, `#[ResourceRefList]`, `#[ResourceUnion]`, embedded objects and lists) become nested object fields. A relation not nested by the handler is loaded through its `#[ResolveWith]` resolver only when the query selects it, batched once per resolver per level.
 
 The Resource serializer reads the Resource's render context. The convention is: prefer the `data` key when present (matches every JSON Resource in the framework), otherwise return the whole render context. This makes existing Handlers work without changes — the same `Resource` you serve over REST renders correctly under GraphQL.
 
 ## How to run the endpoint
 
-Start the application (`bin/semitexa server:start`) and POST to `/graphql`:
+Start the application (`bin/semitexa server:start`) and POST to `/graphql` (9502 is the default port; the installer writes the actual one to `.env` as `SWOOLE_PORT`):
 
 ```bash
-curl -s -X POST http://localhost:8080/graphql \
+curl -s -X POST http://localhost:9502/graphql \
   -H 'Content-Type: application/json' \
   --data '{
     "query": "query { articles { id title published } }",
@@ -166,23 +176,18 @@ The endpoint always returns `200 OK` for executed-but-failed operations (errors 
 
 ## Current limitations
 
-- **No nested resources.** Output types are scalar-only objects; nested objects and lists of nested objects are not in the schema yet. Tracked: `ep-graphql-nested-resources`.
-- **No subscriptions, no batching, no persisted queries, no federation.** Out of scope.
-- **No `DataLoader`-style batching of resolvers.** Each field runs its full Payload→Handler→Resource cycle.
+- **Subscriptions are SSE only.** A `subscription` operation streams when the client sends `Accept: text/event-stream` to the same endpoint. Admission is set by `SEMITEXA_GRAPHQL_SSE_MODE` (`disabled`, `authenticated-only` — the default — or `everyone`). No WebSocket transport.
+- **No query batching, no persisted queries, no federation.** Out of scope.
+- **Only relation fields are batched.** Each root field runs its full Payload→Handler→Resource cycle.
 - **No GET execution.** Only `POST /graphql` is supported. GET-based execution and persisted queries are out of scope for the package's HTTP route.
 - Field selection is tracked by webonyx but not pushed down to the resolver — the Handler always produces the full Resource, and webonyx then projects the requested fields. That's transparent to clients but means you cannot use unknown selections to skip work in the Handler.
 
 ## Running the tests
 
+In the Semitexa workspace (where `packages/semitexa-graphql` is checked out), run the package's PHPUnit tests inside the app container:
+
 ```bash
-# Package tests only
-bin/semitexa test:run --testsuite semitexa-graphql
-
-# Filter by name
-bin/semitexa test:run --filter "Graphql"
-
-# Full suite
-bin/semitexa test:run
+docker compose exec app php vendor/bin/phpunit packages/semitexa-graphql/tests
 ```
 
 Tests cover: attribute behaviour, registry discovery, scalar mapping, schema generation, payload hydration, handler dispatch, resource serialization, error mapping, and end-to-end query/mutation execution against the demo Article domain.
