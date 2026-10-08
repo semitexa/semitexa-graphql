@@ -90,7 +90,7 @@ That's all that's required. Discovery picks it up at boot, the schema builder pr
 |---------------|----------|-------------|---------|
 | `field`       | ?string  | `null`      | GraphQL field name (e.g. `articles`, `createArticle`). When `null`, derived from the Payload class name. |
 | `rootType`    | ?string  | `null`      | `'query'`, `'mutation'` or `'subscription'`. When `null`, derived from the HTTP method (`GET`/`HEAD` → query, otherwise mutation); `subscription` must be declared. |
-| `output`      | ?string  | `null`      | FQCN of the typed output DTO (e.g. `Article::class`). When `null`, the field's output type is the catch-all `Json` scalar. |
+| `output`      | ?string  | `null`      | Legacy: FQCN of an output DTO. The field type normally comes from the route's `responseWith` resource (`#[ResourceObject]`), the same contract OpenAPI uses; `output` is used only when that resource yields no GraphQL fields, and the `Json` scalar is the last resort. |
 | `list`        | bool     | `false`     | When `true`, the schema field type is wrapped as `[Output]`. |
 | `watchScopes` | list     | `[]`        | Resource scopes a `subscription` watches; ignored for query/mutation. |
 | `description` | ?string  | `null`      | Schema description (surfaces in introspection). |
@@ -108,7 +108,7 @@ Each `public function setX(<scalar>): void` setter on the Payload becomes one Gr
 
 ## Output mapping
 
-For each `output:` class:
+The field type is built from the route's `#[ResourceObject]` response (or, as a legacy fallback, from the `output:` class):
 
 - Each `public readonly` scalar property becomes a GraphQL field of the same name.
 - `string`, `int`, `float`, `bool`, `?T` → standard scalars; nullable types stay nullable.
@@ -166,6 +166,7 @@ Errors carry a stable `extensions.code`. Mapping table:
 | `Semitexa\Core\Exception\AccessDeniedException`   | `FORBIDDEN`              | 403       |
 | `Semitexa\Core\Exception\AuthenticationException` | `UNAUTHENTICATED`        | 401       |
 | `Semitexa\Core\Exception\RateLimitException`      | `RATE_LIMITED`           | 429       |
+| any other `Semitexa\Core\Exception\DomainException` with a status below 500 | its own error code, upper-cased | its own status |
 | any other `Throwable`                    | `INTERNAL_SERVER_ERROR`  | 500       |
 
 The runtime never leaks original exception messages or stack traces for `INTERNAL_SERVER_ERROR` — the response carries a generic message.
