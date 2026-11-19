@@ -119,6 +119,44 @@ final class GraphqlOperationTypeResolver
      */
     public function subscriptionRootFields(string $query, ?string $operationName = null): array
     {
+        $fields = [];
+        foreach ($this->subscriptionRootSelections($query, $operationName) as $selection) {
+            if ($selection instanceof FieldNode) {
+                $fields[] = $selection->name->value;
+            }
+        }
+
+        return $fields;
+    }
+
+    /**
+     * Whether the subscription's root selects fields and nothing else.
+     *
+     * {@see subscriptionRootFields()} does not chase a fragment, but the
+     * executor does: `subscription { ...F }` and `... on Subscription { … }`
+     * run their fields while naming none here. Whoever decides something from
+     * the root field names (who may open the stream, which scopes it watches)
+     * must first know that the names are all of them.
+     */
+    public function subscriptionRootIsFieldsOnly(string $query, ?string $operationName = null): bool
+    {
+        foreach ($this->subscriptionRootSelections($query, $operationName) as $selection) {
+            if (!$selection instanceof FieldNode) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * The root selections of the document's `subscription` operation; none for
+     * a malformed, ambiguous or non-subscription document.
+     *
+     * @return list<\GraphQL\Language\AST\SelectionNode>
+     */
+    private function subscriptionRootSelections(string $query, ?string $operationName): array
+    {
         if (trim($query) === '') {
             return [];
         }
@@ -156,13 +194,11 @@ final class GraphqlOperationTypeResolver
             return [];
         }
 
-        $fields = [];
+        $selections = [];
         foreach ($matched->selectionSet->selections as $selection) {
-            if ($selection instanceof FieldNode) {
-                $fields[] = $selection->name->value;
-            }
+            $selections[] = $selection;
         }
 
-        return $fields;
+        return $selections;
     }
 }

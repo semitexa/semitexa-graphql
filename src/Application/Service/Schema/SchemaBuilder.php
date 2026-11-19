@@ -10,8 +10,11 @@ use GraphQL\Type\Definition\Type;
 use GraphQL\Type\Schema;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Attribute\SatisfiesServiceContract;
+use Semitexa\Core\Contract\ValidatablePayloadInterface;
+use Semitexa\Core\Exception\ValidationException;
 use Semitexa\Core\Resource\Metadata\ResourceMetadataRegistry;
 use Semitexa\Core\Resource\Metadata\ResourceObjectMetadata;
+use Semitexa\Graphql\Application\Service\Runtime\GraphqlOperationGate;
 use Semitexa\Graphql\Domain\Contract\GraphqlOperationRegistryInterface;
 use Semitexa\Graphql\Domain\Contract\HandlerInvokerInterface;
 use Semitexa\Graphql\Domain\Contract\PayloadHydratorInterface;
@@ -54,6 +57,14 @@ final class SchemaBuilder implements SchemaProviderInterface
     protected ResourceSerializerInterface $resourceSerializer;
 
     /**
+     * Every operation passes this before its handler is invoked: the payload's
+     * own access policy, enforced by the components that enforce it over HTTP.
+     * A concrete class on purpose, not a contract an application could rebind.
+     */
+    #[InjectAsReadonly]
+    protected GraphqlOperationGate $operationGate;
+
+    /**
      * Canonical Resource metadata — shared with OpenAPI. When an operation's
      * route response is a registered `#[ResourceObject]`, its GraphQL output
      * type is derived from here instead of from an ad-hoc `output:` DTO.
@@ -86,6 +97,7 @@ final class SchemaBuilder implements SchemaProviderInterface
         HandlerInvokerInterface $handlerInvoker,
         ResourceSerializerInterface $resourceSerializer,
         ?ResourceMetadataRegistry $resourceMetadata = null,
+        ?GraphqlOperationGate $operationGate = null,
     ): void {
         $this->operations = $operations;
         $this->outputTypes = $outputTypes;
@@ -96,6 +108,9 @@ final class SchemaBuilder implements SchemaProviderInterface
         // Empty registry → no class resolves → legacy output-class path. Keeps
         // pre-existing six-arg test calls behaving exactly as before.
         $this->resourceMetadata = $resourceMetadata ?? new ResourceMetadataRegistry();
+        // The gate is never absent: an unwired one still refuses every
+        // operation that is not public and requirement-free.
+        $this->operationGate = $operationGate ?? new GraphqlOperationGate();
         $this->schema = null;
     }
 
@@ -243,18 +258,44 @@ final class SchemaBuilder implements SchemaProviderInterface
 
     /**
      * Drives one operation through the existing Semitexa pipeline:
-     * args → Payload → Handler → Resource → GraphQL value.
+     * gate → args → Payload → validate → gate → Handler → Resource → GraphQL value.
      *
-     * Domain exceptions thrown by handlers (`ValidationException`,
-     * `NotFoundException`, etc.) bubble up so the executor's error mapper
-     * can translate them into GraphQL `errors` with a stable `extensions.code`.
+     * The gate brackets hydration the way the HTTP pipeline does: the caller
+     * is checked before any argument reaches a setter, the hydrated payload is
+     * validated, and only then do the access listeners see it. A refusal never
+     * reaches the handler.
+     *
+     * Domain exceptions thrown on the way (`AuthenticationException`,
+     * `AccessDeniedException`, `ValidationException`, `NotFoundException`,
+     * etc.) bubble up so the executor's error mapper can translate them into
+     * GraphQL `errors` with a stable `extensions.code`.
      *
      * @param array<string, mixed> $args
      */
     private function resolveOperation(ResolvedGraphqlOperation $op, array $args): mixed
     {
-        $payload = $this->payloadHydrator->hydrate($op->payloadClass, $args);
+        $payload = $this->operationGate->admit($op, fn (): object => $this->hydrateAndValidate($op, $args));
         $resource = $this->handlerInvoker->invoke($op, $payload);
         return $this->resourceSerializer->serialize($resource);
+    }
+
+    /**
+     * Hydration, then the payload's cross-field rules — the step the HTTP
+     * pipeline runs after the setters and before any handler. Here rather than
+     * in the hydrator, so a replaced hydrator cannot leave it out.
+     *
+     * @param array<string, mixed> $args
+     */
+    private function hydrateAndValidate(ResolvedGraphqlOperation $op, array $args): object
+    {
+        $payload = $this->payloadHydrator->hydrate($op->payloadClass, $args);
+        if ($payload instanceof ValidatablePayloadInterface) {
+            $errors = $payload->validate();
+            if ($errors !== []) {
+                throw new ValidationException($errors);
+            }
+        }
+
+        return $payload;
     }
 }
