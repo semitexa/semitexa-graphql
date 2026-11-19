@@ -225,6 +225,9 @@ final class GraphqlSseSubscriptionStreamerTest extends TestCase
     {
         $streamer = new GraphqlSseSubscriptionStreamer();
         (new ReflectionProperty($streamer, 'operationType'))->setValue($streamer, new GraphqlOperationTypeResolver());
+        // Bound, as bindExecutor() binds it: without the SSE server tryServe()
+        // returns null before it reads the document type, whatever the document.
+        (new ReflectionProperty($streamer, 'sseServer'))->setValue($streamer, AsyncResourceSseServer::instance());
 
         $payload = new GraphqlEndpointPayload();
         $payload->setQuery('query { articles { id } }');

@@ -64,7 +64,9 @@ use Throwable;
  *     operation's own route, and a GraphQL call has no such URL;
  *   - any other `#[Requires…]` attribute, because nothing here can tell that
  *     something enforces it;
- *   - a non-public operation called with no HTTP request to authenticate.
+ *   - a non-public operation called with no HTTP request to authenticate;
+ *   - a non-public operation when no pre-hydration auth gate is bound: nothing
+ *     would check the caller before the arguments reach the setters.
  *
  * Refusals are the domain exceptions the HTTP pipeline throws, so the error
  * mapper answers UNAUTHENTICATED or FORBIDDEN. A refusal decided HERE tells the
