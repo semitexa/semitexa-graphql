@@ -12,13 +12,17 @@ use Semitexa\Core\Auth\AuthContextInterface;
 use Semitexa\Core\Auth\AuthenticatableInterface;
 use Semitexa\Graphql\Application\Payload\Request\GraphqlEndpointPayload;
 use Semitexa\Graphql\Application\Resource\Response\GraphqlEndpointResource;
+use Semitexa\Graphql\Application\Service\Runtime\GraphqlOperationGate;
 use Semitexa\Graphql\Application\Service\Runtime\GraphqlOperationTypeResolver;
 use Semitexa\Graphql\Application\Service\Runtime\GraphqlSseSubscriptionStreamer;
+use Semitexa\Graphql\Application\Service\Runtime\GraphqlSubscriptionAccess;
+use Semitexa\Graphql\Discovery\GraphqlOperationRegistry;
 use Semitexa\Graphql\Discovery\ResolvedGraphqlOperation;
 use Semitexa\Graphql\Domain\Contract\GraphqlExecutorInterface;
 use Semitexa\Graphql\Domain\Contract\GraphqlOperationRegistryInterface;
 use Semitexa\Graphql\Domain\Model\GraphqlExecutionResult;
 use Semitexa\Graphql\Domain\Model\GraphqlSseMode;
+use Semitexa\Graphql\Tests\Support\StubRouteInspectionRegistry;
 use Semitexa\Ssr\Application\Service\Async\AsyncResourceSseServer;
 use Semitexa\Ssr\Application\Service\Async\SseServer;
 
@@ -506,6 +510,17 @@ final class GraphqlSseSubscriptionStreamerTest extends TestCase
     {
         $streamer = new GraphqlSseSubscriptionStreamer();
         (new ReflectionProperty($streamer, 'executor'))->setValue($streamer, $executor);
+        // A tick asks the subscription's access policy about each root field
+        // that is a registered operation. These documents name none, so the
+        // tick is decided by the mode alone, as before; the refusals are
+        // covered in GraphqlSseSubscriptionAccessTest.
+        $operations = new GraphqlOperationRegistry();
+        (new ReflectionProperty($operations, 'routes'))->setValue($operations, new StubRouteInspectionRegistry());
+        $access = new GraphqlSubscriptionAccess();
+        $access->setCollaboratorsForTest(new GraphqlOperationTypeResolver(), $operations, new GraphqlOperationGate());
+        (new ReflectionProperty($streamer, 'subscriptionAccess'))->setValue($streamer, $access);
+        // semitexa-ssr is installed here: the streamer has a server to stream onto.
+        (new ReflectionProperty($streamer, 'sseServer'))->setValue($streamer, AsyncResourceSseServer::instance());
         return $streamer;
     }
 

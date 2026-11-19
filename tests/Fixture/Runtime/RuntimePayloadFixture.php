@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Semitexa\Graphql\Tests\Fixture\Runtime;
 
+use Semitexa\Core\Attribute\AsPublicPayload;
 use Semitexa\Core\Validation\Trait\NotBlankValidationTrait;
 use Semitexa\Graphql\Attribute\ExposeAsGraphql;
 
@@ -14,7 +15,10 @@ use Semitexa\Graphql\Attribute\ExposeAsGraphql;
  * Setter validation rejects an empty `id` so the Runtime tests can drive
  * both the happy path and the ValidationException path without depending
  * on Core's full HTTP pipeline.
+ *
+ * Public, and says so: an operation whose payload does not is refused.
  */
+#[AsPublicPayload(path: '/runtime/{id}', methods: ['GET'])]
 #[ExposeAsGraphql(
     field: 'runtimeFixture',
     rootType: 'query',

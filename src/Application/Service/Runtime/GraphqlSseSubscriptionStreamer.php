@@ -23,6 +23,7 @@ use Semitexa\Graphql\Domain\Contract\GraphqlExecutorInterface;
 use Semitexa\Graphql\Domain\Contract\GraphqlOperationRegistryInterface;
 use Semitexa\Graphql\Domain\Model\GraphqlSseMode;
 use Semitexa\Ssr\Application\Service\Async\AsyncResourceSseServer;
+use Semitexa\Ssr\Application\Service\Async\SseServer;
 use Semitexa\Ssr\Domain\Model\SubscriptionRecord;
 
 /**
@@ -124,6 +125,11 @@ use Semitexa\Ssr\Domain\Model\SubscriptionRecord;
  * funnel, zero SSR changes. Execution errors on a tick ride INSIDE the `next`
  * body (graphql-sse semantics), exactly as one-shot; a lost-access tick
  * TERMINATEs upstream (close frame, no data) before this branch is reached.
+ *
+ * OPERATION ACCESS. The mode is about the FEATURE; who may run a given
+ * subscription is the operation's own access policy. {@see GraphqlSubscriptionAccess}
+ * is asked before the socket grab (a clean 401/403, no stream) and on every
+ * tick (the stream is closed); the full gate runs inside each frame's execution.
  */
 #[AsService]
 final class GraphqlSseSubscriptionStreamer
@@ -157,6 +163,19 @@ final class GraphqlSseSubscriptionStreamer
     #[InjectAsReadonly]
     protected GraphqlOperationRegistryInterface $operations;
 
+    /** The subscription's own access policy; see the class comment. */
+    #[InjectAsReadonly]
+    protected GraphqlSubscriptionAccess $subscriptionAccess;
+
+    /**
+     * The SSE server of semitexa-ssr, which is optional beside this package:
+     * unresolved, there is nothing to stream onto and the endpoint stays
+     * one-shot. Its presence is the whole question; the serve goes through the
+     * static surface this class has always used.
+     */
+    #[InjectAsReadonly(optional: true)]
+    protected SseServer $sseServer;
+
     /** Resolves THIS route (with handlers) for the frozen re-run chain. */
     #[InjectAsReadonly]
     protected RouteRegistry $routeRegistry;
@@ -186,7 +205,7 @@ final class GraphqlSseSubscriptionStreamer
         GraphqlEndpointResource $resource,
     ): ?GraphqlEndpointResource {
         // No SSR / Swoole runtime → nothing to stream onto. (Soft dependency.)
-        if (!class_exists(SwooleBootstrap::class) || !class_exists(AsyncResourceSseServer::class)) {
+        if (!isset($this->sseServer)) {
             return null;
         }
 
@@ -235,7 +254,17 @@ final class GraphqlSseSubscriptionStreamer
                 ));
             }
 
-            $resource->setRenderContext($this->nextFrame($payload));
+            // The caller of a running stream may have signed out: close it
+            // with the reason (reExecute() turns either exception into a
+            // terminate) rather than feed it error frames while it stays open.
+            $refusal = $this->subscriptionAccess->refusal($payload);
+            if ($refusal !== null) {
+                throw $refusal;
+            }
+
+            $resource->setRenderContext($this->subscriptionAccess->duringReRun(
+                fn (): array => $this->nextFrame($payload),
+            ));
 
             return $resource;
         }
@@ -272,6 +301,13 @@ final class GraphqlSseSubscriptionStreamer
         $mode = $this->resolveMode();
         if (!$mode->admits($this->isAuthenticated())) {
             return $this->refuse($resource, $mode);
+        }
+
+        // The subscription's own access policy, as far as it can be decided
+        // without its arguments; here for the reason the mode gate is.
+        $refusal = $this->subscriptionAccess->refusal($payload);
+        if ($refusal !== null) {
+            return $this->subscriptionAccess->refuse($resource, $refusal);
         }
 
         // --- SSE branch: held-open live stream (PHASE 4) ---------------------

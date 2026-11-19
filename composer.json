@@ -11,7 +11,7 @@
     ],
     "require": {
         "php": "^8.4",
-        "semitexa/core": "*",
+        "semitexa/core": ">=2026.10.29.1052 || dev-master",
         "webonyx/graphql-php": "^15.16"
     },
     "autoload": {
@@ -25,6 +25,11 @@
         }
     },
     "extra": {
+        "semitexa": {
+            "floors": {
+                "semitexa/core": "2026.10.29.1052"
+            }
+        },
         "semitexa-module": {
             "extends": null
         }
