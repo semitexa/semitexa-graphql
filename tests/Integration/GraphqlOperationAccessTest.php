@@ -12,6 +12,7 @@ use Semitexa\Core\Auth\AuthResult;
 use Semitexa\Core\Exception\AccessDeniedException;
 use Semitexa\Core\Exception\RateLimitException;
 use Semitexa\Core\Lifecycle\CurrentRequestStore;
+use Semitexa\Core\Log\LoggerInterface;
 use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Core\Pipeline\RequestPipelineContext;
 use Semitexa\Core\Request;
@@ -42,10 +43,16 @@ final class GraphqlOperationAccessTest extends TestCase
 
     private RecordingLogger $log;
 
+    private int $savedCalls = 0;
+
+    private ?LoggerInterface $savedLogger = null;
+
     protected function setUp(): void
     {
         $this->saved = AccessHarness::takeCliStore();
+        $this->savedCalls = AccessHandlerFixture::$calls;
         AccessHandlerFixture::$calls = 0;
+        $this->savedLogger = AccessHarness::takeLogger();
 
         $this->harness = new AccessHarness();
         StaticLoggerBridge::set($this->log = new RecordingLogger());
@@ -54,7 +61,8 @@ final class GraphqlOperationAccessTest extends TestCase
 
     protected function tearDown(): void
     {
-        StaticLoggerBridge::reset();
+        AccessHarness::restoreLogger($this->savedLogger);
+        AccessHandlerFixture::$calls = $this->savedCalls;
         AccessHarness::restoreCliStore($this->saved);
     }
 
@@ -65,6 +73,21 @@ final class GraphqlOperationAccessTest extends TestCase
         $result = $this->query('{ protectedThing(id: "7") { id name } }');
 
         $this->assertRefused($result, 'UNAUTHENTICATED', 'protectedThing');
+    }
+
+    /**
+     * Without the pre-hydration gate nothing checks the caller before the
+     * arguments reach the setters: the empty id made the setter answer
+     * VALIDATION_FAILED to a guest, telling them what it accepts.
+     */
+    public function test_a_protected_operation_is_refused_before_hydration_when_no_pre_hydration_gate_is_bound(): void
+    {
+        $this->harness->preHydrationGateBound = false;
+
+        $result = $this->query('{ protectedThing(id: "") { id name } }');
+
+        $this->assertRefused($result, 'FORBIDDEN', 'protectedThing');
+        $this->assertReasonOnlyInTheLog($result, 'no pre-hydration auth gate');
     }
 
     public function test_a_signed_in_user_runs_a_protected_operation(): void

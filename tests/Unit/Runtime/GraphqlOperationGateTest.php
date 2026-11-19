@@ -6,12 +6,14 @@ namespace Semitexa\Graphql\Tests\Unit\Runtime;
 
 use PHPUnit\Framework\TestCase;
 use Semitexa\Core\Exception\AccessDeniedException;
+use Semitexa\Core\Log\LoggerInterface;
 use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Graphql\Application\Service\Runtime\GraphqlOperationGate;
 use Semitexa\Graphql\Discovery\ResolvedGraphqlOperation;
 use Semitexa\Graphql\Tests\Fixture\Access\ProtectedChildPayloadFixture;
 use Semitexa\Graphql\Tests\Fixture\Access\PublicParentPayloadFixture;
 use Semitexa\Graphql\Tests\Fixture\Runtime\RuntimeResourceFixture;
+use Semitexa\Graphql\Tests\Support\AccessHarness;
 use Semitexa\Graphql\Tests\Support\RecordingLogger;
 
 /**
@@ -22,14 +24,17 @@ final class GraphqlOperationGateTest extends TestCase
 {
     private RecordingLogger $log;
 
+    private ?LoggerInterface $savedLogger = null;
+
     protected function setUp(): void
     {
+        $this->savedLogger = AccessHarness::takeLogger();
         StaticLoggerBridge::set($this->log = new RecordingLogger());
     }
 
     protected function tearDown(): void
     {
-        StaticLoggerBridge::reset();
+        AccessHarness::restoreLogger($this->savedLogger);
     }
 
     /**

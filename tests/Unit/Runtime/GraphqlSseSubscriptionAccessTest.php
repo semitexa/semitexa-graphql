@@ -42,9 +42,12 @@ final class GraphqlSseSubscriptionAccessTest extends TestCase
 
     private AccessHarness $harness;
 
+    private int $savedCalls = 0;
+
     protected function setUp(): void
     {
         $this->saved = AccessHarness::takeCliStore();
+        $this->savedCalls = AccessHandlerFixture::$calls;
         AccessHandlerFixture::$calls = 0;
 
         $this->harness = new AccessHarness();
@@ -53,6 +56,7 @@ final class GraphqlSseSubscriptionAccessTest extends TestCase
 
     protected function tearDown(): void
     {
+        AccessHandlerFixture::$calls = $this->savedCalls;
         AccessHarness::restoreCliStore($this->saved);
     }
 

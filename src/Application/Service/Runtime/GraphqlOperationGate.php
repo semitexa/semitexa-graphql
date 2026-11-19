@@ -282,11 +282,22 @@ final class GraphqlOperationGate
             : null;
         $bootstrapper = $factory instanceof AuthBootstrapperFactoryInterface ? $factory->create($container, $scope) : null;
 
-        if ($container->has(PreHydrationAuthGateInterface::class)) {
-            $gate = $container->get(PreHydrationAuthGateInterface::class);
-            if ($gate instanceof PreHydrationAuthGateInterface) {
-                $gate->gate(self::barePayload($operation), $request, $bootstrapper);
-            }
+        $gate = $container->has(PreHydrationAuthGateInterface::class)
+            ? $container->get(PreHydrationAuthGateInterface::class)
+            : null;
+        if ($gate instanceof PreHydrationAuthGateInterface) {
+            $gate->gate(self::barePayload($operation), $request, $bootstrapper);
+        } elseif (!$declared['public'] || $route->accessType !== PayloadAccessType::Public) {
+            // Nothing would check the caller before the arguments reach the
+            // payload's setters: a guest would be answered by them (a
+            // VALIDATION_FAILED that tells what they accept) before being
+            // refused after hydration.
+            throw self::unavailable(sprintf(
+                'GraphQL operation "%s" is refused: %s is not public, and no pre-hydration auth gate (%s) is bound to check the caller before its arguments are hydrated.',
+                $operation->field,
+                $operation->payloadClass,
+                PreHydrationAuthGateInterface::class,
+            ));
         }
 
         return [

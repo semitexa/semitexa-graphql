@@ -23,6 +23,8 @@ use Semitexa\Core\Auth\PayloadAccessType;
 use Semitexa\Core\Authorization\SubjectInterface;
 use Semitexa\Core\Container\RequestScopedContainer;
 use Semitexa\Core\Discovery\RouteRegistry;
+use Semitexa\Core\Log\LoggerInterface;
+use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Core\Pipeline\AuthCheck;
 use Semitexa\Core\Pipeline\PipelineListenerRegistry;
 use Semitexa\Core\Pipeline\PreHydrationAuthGateInterface;
@@ -75,6 +77,9 @@ final class AccessHarness
 
     /** False: an application without semitexa-authorization and semitexa-api. */
     public bool $accessPackagesInstalled = true;
+
+    /** False: the authorization listener is registered, but no pre-hydration auth gate is bound. */
+    public bool $preHydrationGateBound = true;
 
     public readonly GraphqlOperationRegistry $operations;
 
@@ -175,6 +180,29 @@ final class AccessHarness
         self::cliStore()->setValue(null, $saved);
     }
 
+    /** The logger StaticLoggerBridge holds now, for a test to put back in its tearDown(). */
+    public static function takeLogger(): ?LoggerInterface
+    {
+        $saved = self::loggerSlot()->getValue();
+
+        return $saved instanceof LoggerInterface ? $saved : null;
+    }
+
+    public static function restoreLogger(?LoggerInterface $saved): void
+    {
+        if ($saved === null) {
+            StaticLoggerBridge::reset();
+
+            return;
+        }
+        StaticLoggerBridge::set($saved);
+    }
+
+    private static function loggerSlot(): ReflectionProperty
+    {
+        return new ReflectionProperty(StaticLoggerBridge::class, 'logger');
+    }
+
     private static function cliStore(): ReflectionProperty
     {
         return new ReflectionProperty(\Semitexa\Core\Support\CoroutineLocal::class, 'cliStore');
@@ -252,7 +280,9 @@ final class AccessHarness
                 AuthorizationListener::class => $authorization,
                 \Semitexa\Api\Pipeline\RequiresScopeListener::class => new \Semitexa\Api\Pipeline\RequiresScopeListener(),
             ] + $listeners;
-            $bindings[PreHydrationAuthGateInterface::class] = new PreHydrationAuthGate();
+            if ($this->preHydrationGateBound) {
+                $bindings[PreHydrationAuthGateInterface::class] = new PreHydrationAuthGate();
+            }
         }
 
         $bindings[PipelineListenerRegistry::class] = self::listenerRegistry(array_keys($listeners));
