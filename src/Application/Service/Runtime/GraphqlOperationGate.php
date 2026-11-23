@@ -12,6 +12,7 @@ use Semitexa\Core\Attribute\AsPublicPayload;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
 use Semitexa\Core\Attribute\RequiresSignedUrl;
+use Semitexa\Core\Attribute\WorkerState;
 use Semitexa\Core\Auth\AuthBootstrapperFactoryInterface;
 use Semitexa\Core\Auth\AuthBootstrapperInterface;
 use Semitexa\Core\Auth\PayloadAccessType;
@@ -108,6 +109,7 @@ final class GraphqlOperationGate
     #[InjectAsReadonly]
     protected ContainerInterface $container;
 
+    #[WorkerState('Test seam set only by setContainerForTest(); production never calls it and uses the injected container.')]
     private ?ContainerInterface $containerOverride = null;
 
     /**

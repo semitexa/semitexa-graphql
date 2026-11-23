@@ -7,6 +7,7 @@ namespace Semitexa\Graphql\Application\Service\Runtime;
 use Psr\Container\ContainerInterface;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
+use Semitexa\Core\Attribute\WorkerState;
 use Semitexa\Core\Resource\IncludeSet;
 use Semitexa\Core\Resource\RelationResolverInterface;
 use Semitexa\Core\Resource\RenderContext;
@@ -35,6 +36,7 @@ use Throwable;
 #[AsService]
 final class LazyRelationResolver
 {
+    #[WorkerState('Test seam set only by setContainerForTest(); production never calls it and uses the injected container.')]
     private ?ContainerInterface $containerOverride = null;
 
     /**

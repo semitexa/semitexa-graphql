@@ -12,6 +12,7 @@ use ReflectionClass;
 use ReflectionNamedType;
 use Semitexa\Core\Attribute\AsService;
 use Semitexa\Core\Attribute\InjectAsReadonly;
+use Semitexa\Core\Attribute\WorkerState;
 use Semitexa\Core\Log\StaticLoggerBridge;
 use Semitexa\Core\Resource\Metadata\ResourceFieldKind;
 use Semitexa\Core\Resource\Metadata\ResourceFieldMetadata;
@@ -71,6 +72,7 @@ final class OutputTypeRegistry
     protected LazyRelationResolver $lazyRelations;
 
     /** @var array<string, ObjectType> */
+    #[WorkerState('Built GraphQL object types keyed by output or resource class, derived from discovered operations and resource metadata, never from a request.')]
     private array $types = [];
 
     /** @var array<string, UnionType> keyed by the union's member-set signature. */
@@ -80,6 +82,7 @@ final class OutputTypeRegistry
     private array $scalarFieldsMemo = [];
 
     /** @var array<string, string> GraphQL type name → the class/key that claimed it. */
+    #[WorkerState('GraphQL type name to the class that claimed it, for the duplicate-name check; derived from the same class metadata as the types.')]
     private array $namesSeen = [];
 
     /**
