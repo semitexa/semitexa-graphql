@@ -8,6 +8,7 @@ use Psr\Container\ContainerInterface;
 use ReflectionClass;
 use RuntimeException;
 use Semitexa\Core\Attribute\SatisfiesServiceContract;
+use Semitexa\Core\Attribute\WorkerState;
 use Semitexa\Core\Container\ContainerFactory;
 use Semitexa\Graphql\Domain\Contract\HandlerInvokerInterface;
 use Semitexa\Graphql\Discovery\ResolvedGraphqlOperation;
@@ -39,6 +40,7 @@ use Throwable;
 #[SatisfiesServiceContract(of: HandlerInvokerInterface::class)]
 final class ContainerHandlerInvoker implements HandlerInvokerInterface
 {
+    #[WorkerState('Test seam set only by setContainerForTest(); production never calls it and resolves handlers from ContainerFactory.')]
     private ?ContainerInterface $containerOverride = null;
 
     public function invoke(ResolvedGraphqlOperation $operation, object $payload): object
